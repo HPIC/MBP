@@ -1,4 +1,7 @@
 test/data/horse2zebra
 test/data/__pycache__
+test/loss
+test/parameters
+test/result
 
 mbs/__pycache__/
