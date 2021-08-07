@@ -1,10 +1,10 @@
 from contextlib import contextmanager
 import math
-from typing import List
+from typing import List, Tuple
 import torch
 
 DatasetType = torch.Tensor
-DatasetList = List[DatasetType]
+DatasetList = Tuple[DatasetType]
 
 @contextmanager
 def MBStreaming(dataset : DatasetList, mini_batch_size=4, micro_batch_size=4):
@@ -21,14 +21,14 @@ def MBStreaming(dataset : DatasetList, mini_batch_size=4, micro_batch_size=4):
             micro_dataset[idx] = chunk_dataset
     else:
         for idx, data in enumerate(dataset):
-            micro_dataset[idx] = data
+            micro_dataset[idx] = [ data ]
 
     try:
         for i in range(len(micro_dataset[0])):
             streaming_batch = []
-            for mb_idx in range(micro_batch_slice):
+            for mb_idx in range(num_dataset):
                 streaming_batch.append( micro_dataset[mb_idx][i] )
-            yield streaming_batch
+            yield (tensor for tensor in streaming_batch)
     finally:
         pass
 

@@ -5,7 +5,7 @@ ModelType = Union[torch.nn.Module, torch.nn.Sequential]
 ModelList = List[ModelType]
 
 class PipeAllReduce:
-    def __init__(self, *model) -> None:
+    def __init__(self, model) -> None:
         self.models : ModelList = []
         for mod in model:
             self.models.append(mod)
@@ -36,9 +36,9 @@ class PipeAllReduce:
             for idx, _ in enumerate(all_grad[name]):
                 all_grad[name][idx] /= self.micro_epoch_counter
 
-        for mod in self.models:
+        for i, mod in enumerate(self.models):
             for idx, para in enumerate(mod.parameters()):
-                para.grad.data = all_grad[mod][idx]
+                para.grad.data = all_grad[i][idx]
 
         self.micro_epoch_counter = 0
 
