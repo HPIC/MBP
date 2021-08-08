@@ -1,7 +1,9 @@
-test/data/horse2zebra/
-test/data/__pycache__/
-test/loss/
-test/parameters/
-test/result/
+benchmark/data/horse2zebra/
+benchmark/data/MNIST_DATASET/
+benchmark/data/__pycache__/
+benchmark/loss/
+benchmark/parameters/
+benchmark/result/
+benchmark/test.py
 
 mbs/__pycache__/
