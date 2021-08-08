@@ -11,9 +11,8 @@ class mbstreaming:
     '''
     This class is running like dataloader or enumerate
     '''
-    def __init__(self, models, optims) -> None:
+    def __init__(self, models) -> None:
         self.models : ModelList = models
-        self.optims = optims
 
         self.grad_buffer = {}
         self.micro_epoch_counter = 0
@@ -35,11 +34,11 @@ class mbstreaming:
                     all_grad[name] = self.grad_buffer[index][name]
                 else:
                     for idx, para in enumerate(self.grad_buffer[index][name]):
-                        all_grad[name][idx] += para
+                        all_grad[name][idx] = torch.add(all_grad[name][idx], para)
 
         for name in all_grad:
             for idx, _ in enumerate(all_grad[name]):
-                all_grad[name][idx] /= self.micro_epoch_counter
+                all_grad[name][idx] = torch.div( all_grad[name][idx], self.micro_epoch_counter )
 
         for i, mod in enumerate(self.models):
             for idx, para in enumerate(mod.parameters()):
@@ -47,7 +46,7 @@ class mbstreaming:
 
         self.micro_epoch_counter = 0
 
-    def streaming(self, dataset, mini_batch_size=4, micro_batch_size=4):
+    def streaming(self, dataset : DatasetList, mini_batch_size=4, micro_batch_size=4):
         self.num_dataset = len(dataset)
         self.micro_dataset = []
         micro_batch_slice = 1
@@ -68,4 +67,6 @@ class mbstreaming:
             for mb_idx in range(self.num_dataset):
                 streaming_batch.append( self.micro_dataset[mb_idx][i] )
             yield (tensor for tensor in streaming_batch)
+            self.store_grad()
+        self.allreduce()
 
