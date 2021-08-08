@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 from torch.nn import init
@@ -218,7 +219,7 @@ if __name__=='__main__':
     # Define target models for pipe_allreduce
     models = (G_A, G_B, D_A, D_B)
     optims = (opt_G, opt_D)
-    streaming_dataloader = mbstreaming(models, optims)
+    streaming_dataloader = mbstreaming(models)
 
     # Define vars
     lambda_A = 10
@@ -250,7 +251,7 @@ if __name__=='__main__':
                 opt_D.zero_grad()
 
                 inputs = (input['A'], input['B'])
-                num_micor_batch = args.b / args.micro_batch
+                num_micor_batch = math.ceil(args.b / args.micro_batch)
 
                 for (real_A, real_B) in streaming_dataloader.streaming(inputs, mini_batch_size=args.b, micro_batch_size=args.micro_batch):
                     real_A = real_A.to(dev)
@@ -274,7 +275,7 @@ if __name__=='__main__':
                     adv_loss_A      = adv_loss(fake_output_A, real_label)
                     fake_output_B   = D_B(fake_B)
                     adv_loss_B      = adv_loss(fake_output_B, real_label)
-                    
+
                     ''' Calculate cycle loss '''
                     cyc_loss_A      = cyc_l1loss(recover_A, real_A) * lambda_A
                     cyc_loss_B      = cyc_l1loss(recover_B, real_B) * lambda_B
@@ -308,8 +309,6 @@ if __name__=='__main__':
                     loss_values[epoch]['A_loss'] += A_loss.detach().item()
                     loss_values[epoch]['B_loss'] += B_loss.detach().item()
 
-                    streaming_dataloader.store_grad()
-                streaming_dataloader.allreduce()
                 opt_G.step()
                 opt_D.step()
 
@@ -323,11 +322,6 @@ if __name__=='__main__':
             loss_values[epoch]['g_loss'] /= (len(dataloader) * num_micor_batch)
             loss_values[epoch]['A_loss'] /= (len(dataloader) * num_micor_batch)
             loss_values[epoch]['B_loss'] /= (len(dataloader) * num_micor_batch)
-
-            torch.save(G_A.state_dict(), f"./parameters/cyclegan_mbs/G_A.pth")
-            torch.save(G_B.state_dict(), f"./parameters/cyclegan_mbs/G_B.pth")
-            torch.save(D_A.state_dict(), f"./parameters/cyclegan_mbs/D_A.pth")
-            torch.save(D_B.state_dict(), f"./parameters/cyclegan_mbs/D_B.pth")
 
             print(
                 f"[{epoch+1}/{epochs}]",
@@ -348,5 +342,8 @@ if __name__=='__main__':
             print()
         json.dump(json_file, file, indent=4)
 
-
+    torch.save(G_A.state_dict(), f"./parameters/cyclegan_mbs/G_A.pth")
+    torch.save(G_B.state_dict(), f"./parameters/cyclegan_mbs/G_B.pth")
+    torch.save(D_A.state_dict(), f"./parameters/cyclegan_mbs/D_A.pth")
+    torch.save(D_B.state_dict(), f"./parameters/cyclegan_mbs/D_B.pth")
 
