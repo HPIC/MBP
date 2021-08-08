@@ -10,7 +10,7 @@ import argparse
 
 import sys
 sys.path.append('../')
-from mbs.micro_batch_streaming import MBStreaming, mbstreaming
+from mbs.micro_batch_streaming import mbstreaming
 from mbs.pipeline_allreduce import PipeAllReduce
 
 class Resnet_Generator(nn.Module):
@@ -181,13 +181,15 @@ def initialize(model : torch.nn.Module):
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description="Test our framework with CycleGAN")
+    parser.add_argument("-d", type=int, default=0)
     parser.add_argument("-b", type=int, default=4)
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("-e", type=int, default=100)
+    parser.add_argument("--micro-batch", type=int, default=4)
     args = parser.parse_args()
 
     dataloader = cyclegan_dataset(path='./data/horse2zebra/train', image_size=args.image_size, batch_size=args.b)
-    dev = torch.device(f"cuda:0")
+    dev = torch.device(f"cuda:{args.d}")
     epochs = args.e
 
     # Define Models.
@@ -231,7 +233,7 @@ if __name__=='__main__':
     train_time = 0
     train_iter = 0
 
-    with open('./loss/cyclegan_mbs_loss_value.json', 'w') as file:
+    with open(f'./loss/cyclegan_mbs_{args.b}_loss_value.json', 'w') as file:
         json_file = {}
         for epoch in range(epochs):
             epoch_start = time.perf_counter()
@@ -248,8 +250,9 @@ if __name__=='__main__':
                 opt_D.zero_grad()
 
                 inputs = (input['A'], input['B'])
+                num_micor_batch = args.b / args.micro_batch
 
-                for (real_A, real_B) in streaming_dataloader.streaming(inputs, mini_batch_size=args.b, micro_batch_size=4):
+                for (real_A, real_B) in streaming_dataloader.streaming(inputs, mini_batch_size=args.b, micro_batch_size=args.micro_batch):
                     real_A = real_A.to(dev)
                     real_B = real_B.to(dev)
 
@@ -301,9 +304,9 @@ if __name__=='__main__':
                     A_loss.backward()
                     B_loss.backward()
 
-                    loss_values[epoch]['g_loss'] += g_loss.detach().item() / batch_size
-                    loss_values[epoch]['A_loss'] += A_loss.detach().item() / batch_size
-                    loss_values[epoch]['B_loss'] += B_loss.detach().item() / batch_size
+                    loss_values[epoch]['g_loss'] += g_loss.detach().item()
+                    loss_values[epoch]['A_loss'] += A_loss.detach().item()
+                    loss_values[epoch]['B_loss'] += B_loss.detach().item()
 
                     streaming_dataloader.store_grad()
                 streaming_dataloader.allreduce()
@@ -317,9 +320,9 @@ if __name__=='__main__':
             epoch_time += epoch_end - epoch_start
             epoch_iter += 1
 
-            loss_values[epoch]['g_loss'] /= len(dataloader)
-            loss_values[epoch]['A_loss'] /= len(dataloader)
-            loss_values[epoch]['B_loss'] /= len(dataloader)
+            loss_values[epoch]['g_loss'] /= (len(dataloader) * num_micor_batch)
+            loss_values[epoch]['A_loss'] /= (len(dataloader) * num_micor_batch)
+            loss_values[epoch]['B_loss'] /= (len(dataloader) * num_micor_batch)
 
             torch.save(G_A.state_dict(), f"./parameters/cyclegan_mbs/G_A.pth")
             torch.save(G_B.state_dict(), f"./parameters/cyclegan_mbs/G_B.pth")
