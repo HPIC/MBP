@@ -10,7 +10,7 @@ import argparse
 
 import sys
 sys.path.append('../')
-from mbs.micro_batch_streaming import MBStreaming
+from mbs.micro_batch_streaming import MBStreaming, mbstreaming
 from mbs.pipeline_allreduce import PipeAllReduce
 
 class Resnet_Generator(nn.Module):
@@ -204,9 +204,6 @@ if __name__=='__main__':
     initialize(model=D_A)
     initialize(model=D_B)
 
-    # Define target models for pipe_allreduce
-    MBS_allreduce = PipeAllReduce( (G_A, G_B, D_A, D_B) )
-
     # Define loss function.
     cyc_l1loss = nn.L1Loss().to(dev)
     idt_l1loss = nn.L1Loss().to(dev)
@@ -215,6 +212,11 @@ if __name__=='__main__':
     # Define optimizers
     opt_G  = torch.optim.Adam( itertools.chain( G_A.parameters(), G_B.parameters() ), lr=0.0002 )
     opt_D  = torch.optim.Adam( itertools.chain( D_A.parameters(), D_B.parameters() ), lr=0.0002 )
+
+    # Define target models for pipe_allreduce
+    models = (G_A, G_B, D_A, D_B)
+    optims = (opt_G, opt_D)
+    streaming_dataloader = mbstreaming(models, optims)
 
     # Define vars
     lambda_A = 10
@@ -245,7 +247,9 @@ if __name__=='__main__':
                 opt_G.zero_grad()
                 opt_D.zero_grad()
 
-                with MBStreaming( (input['A'], input['B']),  mini_batch_size=args.b, micro_batch_size=4 ) as (real_A, real_B):
+                inputs = (input['A'], input['B'])
+
+                for (real_A, real_B) in streaming_dataloader.streaming(inputs, mini_batch_size=args.b, micro_batch_size=4):
                     real_A = real_A.to(dev)
                     real_B = real_B.to(dev)
 
@@ -301,9 +305,8 @@ if __name__=='__main__':
                     loss_values[epoch]['A_loss'] += A_loss.detach().item() / batch_size
                     loss_values[epoch]['B_loss'] += B_loss.detach().item() / batch_size
 
-                    MBS_allreduce.store_grad()
-                MBS_allreduce.exe_grad()
-
+                    streaming_dataloader.store_grad()
+                streaming_dataloader.allreduce()
                 opt_G.step()
                 opt_D.step()
 
