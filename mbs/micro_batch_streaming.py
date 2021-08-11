@@ -1,72 +1,49 @@
-from contextlib import contextmanager
-import math
-from mbs.pipeline_allreduce import ModelList
-from typing import Tuple
+from mbs.wrap_dataloader import wdataloader
+from typing import List, Tuple, Union
+import types
 import torch
+
+ModelType = Union[torch.nn.Module, torch.nn.Sequential]
 
 DatasetType = torch.Tensor
 DatasetList = Tuple[DatasetType]
 
-class mbstreaming:
+OptimsType = torch.optim
+
+class MicroBatchStreaming:
     '''
     This class is running like dataloader or enumerate
     '''
-    def __init__(self, models) -> None:
-        self.models : ModelList = models
+    def __init__(self, micro_batch_size=4) -> None:
+        self.models : List[ ModelType ] = []
+        self.micro_batch_size = micro_batch_size
 
         self.grad_buffer = {}
+        for name, mod in enumerate(self.models):
+            self.grad_buffer[name] = None
         self.micro_epoch_counter = 0
+
+    def dataloader(self, _dataloader):
+        return wdataloader(_dataloader, self.micro_batch_size)
+
+    def model(self, _model):
+        if isinstance(_model, tuple):
+            self.models = list(_model)
+        else:
+            self.models.append(_model)
+
+    def optimizer(self, _optim):
+        _optim.step_allreduce = types.MethodType(step_allreduce, _optim)
+        return _optim
 
     def store_grad(self):
-        self.grad_buffer[self.micro_epoch_counter] = {}
-        for idx, model in enumerate(self.models):
-            model_grad = []
-            for para in model.parameters():
-                model_grad.append(para.grad.data)
-            self.grad_buffer[self.micro_epoch_counter][idx] = model_grad
-        self.micro_epoch_counter += 1
+        for name, mod in enumerate(self.models):
+            self.grad_buffer[name] = mod.parameters()
 
-    def allreduce(self):
-        all_grad = {}
-        for index in self.grad_buffer:
-            for name in self.grad_buffer[index]:
-                if not name in list(all_grad.keys()):
-                    all_grad[name] = self.grad_buffer[index][name]
-                else:
-                    for idx, para in enumerate(self.grad_buffer[index][name]):
-                        all_grad[name][idx] = torch.add(all_grad[name][idx], para)
+def step_allreduce(self, _update : bool = False):
+    if _update:
+        pass
+    else:
+        pass
 
-        for name in all_grad:
-            for idx, _ in enumerate(all_grad[name]):
-                all_grad[name][idx] = torch.div( all_grad[name][idx], self.micro_epoch_counter )
-
-        for i, mod in enumerate(self.models):
-            for idx, para in enumerate(mod.parameters()):
-                para.grad.data = all_grad[i][idx]
-
-        self.micro_epoch_counter = 0
-
-    def streaming(self, dataset : DatasetList, mini_batch_size=4, micro_batch_size=4):
-        self.num_dataset = len(dataset)
-        self.micro_dataset = []
-        micro_batch_slice = 1
-        for _ in range(self.num_dataset):
-            self.micro_dataset.append( None )
-
-        if mini_batch_size > micro_batch_size:
-            micro_batch_slice = math.ceil( mini_batch_size / micro_batch_size )
-            for idx, data in enumerate(dataset):
-                chunk_dataset = data.chunk(micro_batch_slice)
-                self.micro_dataset[idx] = chunk_dataset
-        else:
-            for idx, data in enumerate(dataset):
-                self.micro_dataset[idx] = [ data ]
-
-        for i in range(len(self.micro_dataset[0])):
-            streaming_batch = []
-            for mb_idx in range(self.num_dataset):
-                streaming_batch.append( self.micro_dataset[mb_idx][i] )
-            yield (tensor for tensor in streaming_batch)
-            self.store_grad()
-        self.allreduce()
 

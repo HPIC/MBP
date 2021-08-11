@@ -1,44 +1,61 @@
-from typing import List, Union
+from typing import Dict, Tuple, Union
 import torch
 
 ModelType = Union[torch.nn.Module, torch.nn.Sequential]
-ModelList = List[ModelType]
+ModelList = Tuple[ModelType]
 
 class PipeAllReduce:
-    def __init__(self, model) -> None:
-        self.models : ModelList = []
-        for mod in model:
-            self.models.append(mod)
-
-        self.micro_epoch_counter = 0
+    def __init__(self, model : ModelList) -> None:
+        self.models = model
         self.grad_buffer = {}
+        for model_name, model in enumerate(self.models):
+            self.grad_buffer[model_name] = None
 
-    def store_grad(self):
-        self.grad_buffer[self.micro_epoch_counter] = {}
-        for idx, model in enumerate(self.models):
-            model_grad = []
-            for para in model.parameters():
-                model_grad.append(para.grad.data)
-            self.grad_buffer[self.micro_epoch_counter][idx] = model_grad
-        self.micro_epoch_counter += 1
+    def stack_grad(self):
+        for model_name, model in enumerate(self.models):
+            if self.grad_buffer[model_name]:
+                for idx, para in enumerate(model.parameters()):
+                    self.grad_buffer[model_name][idx] += para.grad.data
+            else:
+                paras = []
+                for idx, para in enumerate(model.parameters()):
+                    paras.append(para.grad.data)
+                self.grad_buffer[model_name] = paras
 
-    def exe_grad(self):
-        all_grad = {}
-        for index in self.grad_buffer:
-            for name in self.grad_buffer[index]:
-                if not name in list(all_grad.keys()):
-                    all_grad[name] = self.grad_buffer[index][name]
-                else:
-                    for idx, para in enumerate(self.grad_buffer[index][name]):
-                        all_grad[name][idx] += para
+    def allreduce(self, num_micro_epoch):
+        # allreduce
+        for model_name, model in enumerate(self.models):
+            for idx, para in enumerate(model.parameters()):
+                para.grad.data = self.grad_buffer[model_name][idx] / num_micro_epoch
 
-        for name in all_grad:
-            for idx, _ in enumerate(all_grad[name]):
-                all_grad[name][idx] /= self.micro_epoch_counter
+        # reset
+        for model_name, model in enumerate(self.models):
+            self.grad_buffer[model_name] = None
 
-        for i, mod in enumerate(self.models):
-            for idx, para in enumerate(mod.parameters()):
-                para.grad.data = all_grad[i][idx]
 
-        self.micro_epoch_counter = 0
+def stack_grad(models : Tuple[torch.nn.Module], grad_buffer : Dict):
+    for model_name, model in enumerate(models):
+        if grad_buffer[model_name]:
+            for idx, para in enumerate(model.parameters()):
+                grad_buffer[model_name][idx] += para.grad.data
+        else:
+            paras = []
+            for idx, para in enumerate(model.parameters()):
+                paras.append(para.grad.data)
+            grad_buffer[model_name] = paras
+
+    return grad_buffer
+
+
+def allreduce(models, grad_buffer, num_micro_epoch):
+    # allreduce
+    for model_name, model in enumerate(models):
+        for idx, para in enumerate(model.parameters()):
+            para.grad.data = grad_buffer[model_name][idx] / num_micro_epoch
+
+    # reset
+    for model_name, model in enumerate(models):
+        grad_buffer[model_name] = None
+
+    return grad_buffer
 
