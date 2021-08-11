@@ -12,7 +12,6 @@ import argparse
 import sys
 sys.path.append('../')
 from mbs.micro_batch_streaming import MicroBatchStreaming
-from mbs.pipeline_allreduce import PipeAllReduce
 
 class Resnet_Generator(nn.Module):
     def __init__(self, in_chhannel=3, out_channel=3, block=6):
