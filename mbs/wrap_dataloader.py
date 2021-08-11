@@ -1,8 +1,5 @@
-from typing import Tuple
-import torch
 import math
 
-DatasetType = Tuple[torch.Tensor]
 
 class wrap_dataset:
     def __init__(self, _dataloader, _micro_batch_size) -> None:
@@ -15,8 +12,8 @@ class wrap_dataset:
         zero = False
         update = False
         for _, data in enumerate(self.dataloader):
-            A = data['A']
-            B = data['B']
+            A = data["A"]
+            B = data["B"]
 
             num_micro_batch = math.ceil(A.size(0) / self.micro_batch_size)
 
@@ -26,9 +23,8 @@ class wrap_dataset:
             for a, b in zip(As, Bs):
                 count_update += 1
                 count_zero += 1
-                
+
                 update = True if count_update % num_micro_batch == 0 else False
                 zero = True if count_zero % num_micro_batch == 1 else False
 
                 yield (zero, update, a, b)
-

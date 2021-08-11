@@ -1,11 +1,10 @@
-from typing import Dict, Tuple, Union
-import torch
+from typing import Dict
 
-ModelType = Union[torch.nn.Module, torch.nn.Sequential]
-ModelList = Tuple[ModelType]
+from mbs.types import ModelList, ModelTuple
+
 
 class PipeAllReduce:
-    def __init__(self, model : ModelList) -> None:
+    def __init__(self, model: ModelList) -> None:
         self.models = model
         self.grad_buffer = {}
         for model_name, model in enumerate(self.models):
@@ -33,7 +32,7 @@ class PipeAllReduce:
             self.grad_buffer[model_name] = None
 
 
-def stack_grad(models : Tuple[torch.nn.Module], grad_buffer : Dict):
+def stack_grad(models: ModelTuple, grad_buffer: Dict):
     for model_name, model in enumerate(models):
         if grad_buffer[model_name]:
             for idx, para in enumerate(model.parameters()):
@@ -58,4 +57,3 @@ def allreduce(models, grad_buffer, num_micro_epoch):
         grad_buffer[model_name] = None
 
     return grad_buffer
-
