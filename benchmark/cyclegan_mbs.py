@@ -9,8 +9,6 @@ from data.dataset import cyclegan_dataset
 from torch import nn
 from util import ensure_dir, prepare_device
 
-from mbs.micro_batch_streaming import MicroBatchStreaming
-
 sys.path.append("../")
 
 
@@ -182,6 +180,8 @@ def initialize(model: torch.nn.Module):
 
 
 if __name__ == "__main__":
+    from mbs.micro_batch_streaming import MicroBatchStreaming
+
     parser = argparse.ArgumentParser(description="Test our framework with CycleGAN")
     parser.add_argument("--device", "-d", type=int, default=0)
     parser.add_argument("--batch_size", "-b", type=int, default=4)
