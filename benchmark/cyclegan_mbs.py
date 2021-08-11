@@ -11,7 +11,7 @@ import argparse
 
 import sys
 sys.path.append('../')
-from mbs.micro_batch_streaming import mbstreaming
+from mbs.micro_batch_streaming import MicroBatchStreaming
 from mbs.pipeline_allreduce import PipeAllReduce
 
 class Resnet_Generator(nn.Module):
@@ -216,17 +216,22 @@ if __name__=='__main__':
     opt_G  = torch.optim.Adam( itertools.chain( G_A.parameters(), G_B.parameters() ), lr=0.0002 )
     opt_D  = torch.optim.Adam( itertools.chain( D_A.parameters(), D_B.parameters() ), lr=0.0002 )
 
-    # Define target models for pipe_allreduce
-    models = (G_A, G_B, D_A, D_B)
-    optims = (opt_G, opt_D)
-    streaming_dataloader = mbstreaming(models)
-
     # Define vars
     lambda_A = 10
     lambda_B = 10
     lambda_idt = 0.5
 
     loss_values = {}
+
+    # Define MicroBatchStreaming
+    mbs = MicroBatchStreaming()
+    dataloader = mbs.dataloader(dataloader)
+    
+    opt_G = mbs.optimizer(opt_G)
+    opt_D = mbs.optimizer(opt_D)
+
+    print(opt_G.__class__.__name__)
+    print(hasattr(opt_G, 'step_allreduce'))
 
     # Define check performance vars
     epoch_time = 0
@@ -243,74 +248,70 @@ if __name__=='__main__':
                 'A_loss' : 0.0,
                 'B_loss' : 0.0
             }
-            for idx, input in enumerate(dataloader):
+            for idx, (up, real_A, real_B) in enumerate(dataloader):
                 train_start = time.perf_counter()
 
                 # forward and backward
                 opt_G.zero_grad()
                 opt_D.zero_grad()
 
-                inputs = (input['A'], input['B'])
-                num_micor_batch = math.ceil(args.b / args.micro_batch)
+                real_A = real_A.to(dev)
+                real_B = real_B.to(dev)
 
-                for (real_A, real_B) in streaming_dataloader.streaming(inputs, mini_batch_size=args.b, micro_batch_size=args.micro_batch):
-                    real_A = real_A.to(dev)
-                    real_B = real_B.to(dev)
+                fake_B     = G_A(real_A)
+                recover_A  = G_B(fake_B)
 
-                    fake_B     = G_A(real_A)
-                    recover_A  = G_B(fake_B)
+                fake_A     = G_B(real_B)
+                recover_B  = G_A(fake_A)
 
-                    fake_A     = G_B(real_B)
-                    recover_B  = G_A(fake_A)
+                idt_B  = G_A(real_B)
+                idt_A  = G_B(real_A)
+                
+                ''' create real and fake label for adversarial loss '''
+                batch_size      = real_A.size(0)
+                real_label = torch.ones(batch_size, 1, size_, size_).to(dev)
+                fake_label = torch.zeros(batch_size, 1, size_, size_).to(dev)
 
-                    idt_B  = G_A(real_B)
-                    idt_A  = G_B(real_A)
-                    
-                    ''' create real and fake label for adversarial loss '''
-                    batch_size      = real_A.size(0)
-                    real_label = torch.ones(batch_size, 1, size_, size_).to(dev)
-                    fake_label = torch.zeros(batch_size, 1, size_, size_).to(dev)
+                fake_output_A   = D_A(fake_A)
+                adv_loss_A      = adv_loss(fake_output_A, real_label)
+                fake_output_B   = D_B(fake_B)
+                adv_loss_B      = adv_loss(fake_output_B, real_label)
 
-                    fake_output_A   = D_A(fake_A)
-                    adv_loss_A      = adv_loss(fake_output_A, real_label)
-                    fake_output_B   = D_B(fake_B)
-                    adv_loss_B      = adv_loss(fake_output_B, real_label)
+                ''' Calculate cycle loss '''
+                cyc_loss_A      = cyc_l1loss(recover_A, real_A) * lambda_A
+                cyc_loss_B      = cyc_l1loss(recover_B, real_B) * lambda_B
 
-                    ''' Calculate cycle loss '''
-                    cyc_loss_A      = cyc_l1loss(recover_A, real_A) * lambda_A
-                    cyc_loss_B      = cyc_l1loss(recover_B, real_B) * lambda_B
+                ''' Calculate idt loss '''
+                idt_loss_A  = idt_l1loss(idt_A, real_A) * lambda_A * lambda_idt
+                idt_loss_B  = idt_l1loss(idt_B, real_B) * lambda_B * lambda_idt
+                g_loss = adv_loss_A + adv_loss_B + cyc_loss_A + cyc_loss_B + idt_loss_A + idt_loss_B
 
-                    ''' Calculate idt loss '''
-                    idt_loss_A  = idt_l1loss(idt_A, real_A) * lambda_A * lambda_idt
-                    idt_loss_B  = idt_l1loss(idt_B, real_B) * lambda_B * lambda_idt
-                    g_loss = adv_loss_A + adv_loss_B + cyc_loss_A + cyc_loss_B + idt_loss_A + idt_loss_B
+                real_output_A   = D_A(real_A)
 
-                    real_output_A   = D_A(real_A)
+                real_A_loss     = adv_loss(real_output_A, real_label)
 
-                    real_A_loss     = adv_loss(real_output_A, real_label)
+                fake_output_A   = D_A(fake_A.detach())
+                fake_A_loss     = adv_loss(fake_output_A, fake_label)
 
-                    fake_output_A   = D_A(fake_A.detach())
-                    fake_A_loss     = adv_loss(fake_output_A, fake_label)
+                real_output_B   = D_B(real_B)
+                real_B_loss     = adv_loss(real_output_B, real_label)
 
-                    real_output_B   = D_B(real_B)
-                    real_B_loss     = adv_loss(real_output_B, real_label)
+                fake_output_B   = D_B(fake_B.detach())
+                fake_B_loss     = adv_loss(fake_output_B, fake_label)
+                
+                A_loss     = real_A_loss + fake_A_loss
+                B_loss     = real_B_loss + fake_B_loss
 
-                    fake_output_B   = D_B(fake_B.detach())
-                    fake_B_loss     = adv_loss(fake_output_B, fake_label)
-                    
-                    A_loss     = real_A_loss + fake_A_loss
-                    B_loss     = real_B_loss + fake_B_loss
+                g_loss.backward()
+                A_loss.backward()
+                B_loss.backward()
 
-                    g_loss.backward()
-                    A_loss.backward()
-                    B_loss.backward()
+                loss_values[epoch]['g_loss'] += g_loss.detach().item()
+                loss_values[epoch]['A_loss'] += A_loss.detach().item()
+                loss_values[epoch]['B_loss'] += B_loss.detach().item()
 
-                    loss_values[epoch]['g_loss'] += g_loss.detach().item()
-                    loss_values[epoch]['A_loss'] += A_loss.detach().item()
-                    loss_values[epoch]['B_loss'] += B_loss.detach().item()
-
-                opt_G.step()
-                opt_D.step()
+                opt_G.step_allreduce( up )
+                opt_D.step_allreduce( up )
 
                 train_end = time.perf_counter()
                 train_time += train_end - train_start
@@ -319,9 +320,9 @@ if __name__=='__main__':
             epoch_time += epoch_end - epoch_start
             epoch_iter += 1
 
-            loss_values[epoch]['g_loss'] /= (len(dataloader) * num_micor_batch)
-            loss_values[epoch]['A_loss'] /= (len(dataloader) * num_micor_batch)
-            loss_values[epoch]['B_loss'] /= (len(dataloader) * num_micor_batch)
+            loss_values[epoch]['g_loss'] /= (len(dataloader) * idx)
+            loss_values[epoch]['A_loss'] /= (len(dataloader) * idx)
+            loss_values[epoch]['B_loss'] /= (len(dataloader) * idx)
 
             print(
                 f"[{epoch+1}/{epochs}]",
