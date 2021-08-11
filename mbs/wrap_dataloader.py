@@ -4,8 +4,39 @@ import math
 
 DatasetType = Tuple[torch.Tensor]
 
+class wrap_dataset:
+    def __init__(self, _dataloader, _micro_batch_size) -> None:
+        self.dataloader = _dataloader
+        self.micro_batch_size = _micro_batch_size
+
+    def __iter__(self):
+        count_update = 0
+        count_zero = 0
+        zero = False
+        update = False
+        for _, data in enumerate(self.dataloader):
+            A = data['A']
+            B = data['B']
+
+            num_micro_batch = math.ceil(A.size(0) / self.micro_batch_size)
+
+            As = A.chunk(num_micro_batch)
+            Bs = B.chunk(num_micro_batch)
+
+            for a, b in zip(As, Bs):
+                count_update += 1
+                count_zero += 1
+                
+                update = True if count_update % num_micro_batch == 0 else False
+                zero = True if count_zero % num_micro_batch == 1 else False
+
+                yield (zero, update, a, b)
+
 def wdataloader(_dataloader, _micro_batch_size):
-    count_iter = 0
+    count_update = 0
+    count_zero = 0
+    zero = False
+    update = False
     for _, data in enumerate(_dataloader):
         A = data['A']
         B = data['B']
@@ -16,10 +47,11 @@ def wdataloader(_dataloader, _micro_batch_size):
         Bs = B.chunk(num_micro_batch)
 
         for a, b in zip(As, Bs):
-            count_iter += 1
-            if count_iter == _micro_batch_size:
-                count_iter = 0
-                update = True
-            else:
-                update = False
-            yield (update, a, b)
+            count_update += 1
+            count_zero += 1
+            
+            update = True if count_update % _micro_batch_size == 0 else False
+            zero = True if count_zero % _micro_batch_size == 1 else False
+
+            yield (zero, update, a, b)
+
