@@ -1,20 +1,21 @@
-import math
-import torch
-import torch.nn as nn
-from torch.nn import init
-from data.dataset import cyclegan_dataset
-
-import itertools
-import time
-import json
 import argparse
-
+import itertools
+import json
 import sys
-sys.path.append('../')
+import time
+
+import torch
+from data.dataset import cyclegan_dataset
+from torch import nn
+from util import ensure_dir, prepare_device
+
 from mbs.micro_batch_streaming import MicroBatchStreaming
 
+sys.path.append("../")
+
+
 class Resnet_Generator(nn.Module):
-    def __init__(self, in_chhannel=3, out_channel=3, block=6):
+    def __init__(self, in_channel=3, out_channel=3, block=6):
         assert block > 0, "block must be bigger than zero."
         super(Resnet_Generator, self).__init__()
         model = []
@@ -29,7 +30,7 @@ class Resnet_Generator(nn.Module):
         channel = 64
         model += [
             nn.Conv2d(
-                in_chhannel,
+                in_channel,
                 channel,
                 kernel_size=7,
                 stride=1,
@@ -175,30 +176,35 @@ class PatchGAN_Discriminator(nn.Module):
         return self.model(input)
 
 
-def initialize(model : torch.nn.Module):
+def initialize(model: torch.nn.Module):
     for para in model.parameters():
-        init.normal_(para, 0, 0.002)
+        nn.init.normal_(para, 0, 0.002)
 
-if __name__=='__main__':
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test our framework with CycleGAN")
-    parser.add_argument("-d", type=int, default=0)
-    parser.add_argument("-b", type=int, default=4)
-    parser.add_argument("--image-size", type=int, default=256)
-    parser.add_argument("-e", type=int, default=100)
-    parser.add_argument("--micro-batch", type=int, default=4)
+    parser.add_argument("--device", "-d", type=int, default=0)
+    parser.add_argument("--batch_size", "-b", type=int, default=4)
+    parser.add_argument("--image_size", "-i", type=int, default=256)
+    parser.add_argument("--epoch", "-e", type=int, default=100)
+    parser.add_argument("--micro_batch", "-m", type=int, default=4)
     args = parser.parse_args()
 
-    dataloader = cyclegan_dataset(path='./data/horse2zebra/train', image_size=args.image_size, batch_size=args.b)
-    dev = torch.device(f"cuda:{args.d}")
-    epochs = args.e
+    dataloader = cyclegan_dataset(
+        path="./data/horse2zebra/train",
+        image_size=args.image_size,
+        batch_size=args.batch_size,
+    )
+    device, _ = prepare_device(target=args.device)
+    epochs = args.epoch
 
-    # Define Models.
+    # Define Models
     block = 9 if args.image_size == 256 else 6
     size_ = 15 if args.image_size == 256 else 7
-    G_A = Resnet_Generator(block=block).to(dev)
-    G_B = Resnet_Generator(block=block).to(dev)
-    D_A = PatchGAN_Discriminator().to(dev)
-    D_B = PatchGAN_Discriminator().to(dev)
+    G_A = Resnet_Generator(block=block).to(device)
+    G_B = Resnet_Generator(block=block).to(device)
+    D_A = PatchGAN_Discriminator().to(device)
+    D_B = PatchGAN_Discriminator().to(device)
 
     # initialization models
     initialize(model=G_A)
@@ -207,13 +213,17 @@ if __name__=='__main__':
     initialize(model=D_B)
 
     # Define loss function.
-    cyc_l1loss = nn.L1Loss().to(dev)
-    idt_l1loss = nn.L1Loss().to(dev)
-    adv_loss   = nn.MSELoss().to(dev)
+    cyc_l1loss = nn.L1Loss().to(device)
+    idt_l1loss = nn.L1Loss().to(device)
+    adv_loss = nn.MSELoss().to(device)
 
     # Define optimizers
-    opt_G  = torch.optim.Adam( itertools.chain( G_A.parameters(), G_B.parameters() ), lr=0.0002 )
-    opt_D  = torch.optim.Adam( itertools.chain( D_A.parameters(), D_B.parameters() ), lr=0.0002 )
+    opt_G = torch.optim.Adam(
+        itertools.chain(G_A.parameters(), G_B.parameters()), lr=0.0002
+    )
+    opt_D = torch.optim.Adam(
+        itertools.chain(D_A.parameters(), D_B.parameters()), lr=0.0002
+    )
 
     # Define vars
     lambda_A = 10
@@ -234,15 +244,12 @@ if __name__=='__main__':
     train_time = 0
     train_iter = 0
 
-    with open(f'./loss/cyclegan_mbs_{args.b}_loss_value.json', 'w') as file:
+    ensure_dir("./loss/")
+    with open(f"./loss/cyclegan_mbs_{args.batch_size}_loss_value.json", "w") as file:
         json_file = {}
         for epoch in range(epochs):
             epoch_start = time.perf_counter()
-            loss_values[epoch] = {
-                'g_loss' : 0.0,
-                'A_loss' : 0.0,
-                'B_loss' : 0.0
-            }
+            loss_values[epoch] = {"g_loss": 0.0, "A_loss": 0.0, "B_loss": 0.0}
             pre_para = None
             for idx, (ze, up, real_A, real_B) in enumerate(dataloader):
                 train_start = time.perf_counter()
@@ -251,79 +258,86 @@ if __name__=='__main__':
                 opt_G.zero_grad_allreduce(ze)
                 opt_D.zero_grad_allreduce(ze)
 
-                real_A = real_A.to(dev)
-                real_B = real_B.to(dev)
+                real_A = real_A.to(device)
+                real_B = real_B.to(device)
 
-                fake_B     = G_A(real_A)
-                recover_A  = G_B(fake_B)
+                fake_B = G_A(real_A)
+                recover_A = G_B(fake_B)
 
-                fake_A     = G_B(real_B)
-                recover_B  = G_A(fake_A)
+                fake_A = G_B(real_B)
+                recover_B = G_A(fake_A)
 
-                idt_B  = G_A(real_B)
-                idt_A  = G_B(real_A)
-                
-                ''' create real and fake label for adversarial loss '''
-                batch_size      = real_A.size(0)
-                real_label = torch.ones(batch_size, 1, size_, size_).to(dev)
-                fake_label = torch.zeros(batch_size, 1, size_, size_).to(dev)
+                idt_B = G_A(real_B)
+                idt_A = G_B(real_A)
 
-                fake_output_A   = D_A(fake_A)
-                adv_loss_A      = adv_loss(fake_output_A, real_label)
-                fake_output_B   = D_B(fake_B)
-                adv_loss_B      = adv_loss(fake_output_B, real_label)
+                """ create real and fake label for adversarial loss """
+                batch_size = real_A.size(0)
+                real_label = torch.ones(batch_size, 1, size_, size_).to(device)
+                fake_label = torch.zeros(batch_size, 1, size_, size_).to(device)
 
-                ''' Calculate cycle loss '''
-                cyc_loss_A      = cyc_l1loss(recover_A, real_A) * lambda_A
-                cyc_loss_B      = cyc_l1loss(recover_B, real_B) * lambda_B
+                fake_output_A = D_A(fake_A)
+                adv_loss_A = adv_loss(fake_output_A, real_label)
+                fake_output_B = D_B(fake_B)
+                adv_loss_B = adv_loss(fake_output_B, real_label)
 
-                ''' Calculate idt loss '''
-                idt_loss_A  = idt_l1loss(idt_A, real_A) * lambda_A * lambda_idt
-                idt_loss_B  = idt_l1loss(idt_B, real_B) * lambda_B * lambda_idt
-                g_loss = adv_loss_A + adv_loss_B + cyc_loss_A + cyc_loss_B + idt_loss_A + idt_loss_B
+                """ Calculate cycle loss """
+                cyc_loss_A = cyc_l1loss(recover_A, real_A) * lambda_A
+                cyc_loss_B = cyc_l1loss(recover_B, real_B) * lambda_B
 
-                real_output_A   = D_A(real_A)
+                """ Calculate idt loss """
+                idt_loss_A = idt_l1loss(idt_A, real_A) * lambda_A * lambda_idt
+                idt_loss_B = idt_l1loss(idt_B, real_B) * lambda_B * lambda_idt
+                g_loss = (
+                    adv_loss_A
+                    + adv_loss_B
+                    + cyc_loss_A
+                    + cyc_loss_B
+                    + idt_loss_A
+                    + idt_loss_B
+                )
 
-                real_A_loss     = adv_loss(real_output_A, real_label)
+                real_output_A = D_A(real_A)
 
-                fake_output_A   = D_A(fake_A.detach())
-                fake_A_loss     = adv_loss(fake_output_A, fake_label)
+                real_A_loss = adv_loss(real_output_A, real_label)
 
-                real_output_B   = D_B(real_B)
-                real_B_loss     = adv_loss(real_output_B, real_label)
+                fake_output_A = D_A(fake_A.detach())
+                fake_A_loss = adv_loss(fake_output_A, fake_label)
 
-                fake_output_B   = D_B(fake_B.detach())
-                fake_B_loss     = adv_loss(fake_output_B, fake_label)
-                
-                A_loss     = real_A_loss + fake_A_loss
-                B_loss     = real_B_loss + fake_B_loss
+                real_output_B = D_B(real_B)
+                real_B_loss = adv_loss(real_output_B, real_label)
+
+                fake_output_B = D_B(fake_B.detach())
+                fake_B_loss = adv_loss(fake_output_B, fake_label)
+
+                A_loss = real_A_loss + fake_A_loss
+                B_loss = real_B_loss + fake_B_loss
 
                 g_loss.backward()
                 A_loss.backward()
                 B_loss.backward()
 
-                opt_G.step_allreduce( up )
-                opt_D.step_allreduce( up )
+                opt_G.step_allreduce(up)
+                opt_D.step_allreduce(up)
 
                 train_end = time.perf_counter()
                 train_time += train_end - train_start
                 train_iter += 1 if up else 0
-                loss_values[epoch]['g_loss'] += g_loss.detach().item()
-                loss_values[epoch]['A_loss'] += A_loss.detach().item()
-                loss_values[epoch]['B_loss'] += B_loss.detach().item()
+                loss_values[epoch]["g_loss"] += g_loss.detach().item()
+                loss_values[epoch]["A_loss"] += A_loss.detach().item()
+                loss_values[epoch]["B_loss"] += B_loss.detach().item()
             epoch_end = time.perf_counter()
             epoch_time += epoch_end - epoch_start
             epoch_iter += 1
 
-            loss_values[epoch]['g_loss'] /= idx
-            loss_values[epoch]['A_loss'] /= idx
-            loss_values[epoch]['B_loss'] /= idx
+            loss_values[epoch]["g_loss"] /= idx
+            loss_values[epoch]["A_loss"] /= idx
+            loss_values[epoch]["B_loss"] /= idx
 
             print(
                 f"[{epoch+1}/{epochs}]",
-                f"train time :",
+                "train time :",
                 format(train_time / train_iter, ".3f") + "s",
-                f"epoch time :",
+                "epoch time :",
                 format(epoch_time / epoch_iter, ".3f") + "s",
                 end=" ",
             )
@@ -338,8 +352,8 @@ if __name__=='__main__':
             print()
         json.dump(json_file, file, indent=4)
 
-    torch.save(G_A.state_dict(), f"./parameters/cyclegan_mbs/G_A.pth")
-    torch.save(G_B.state_dict(), f"./parameters/cyclegan_mbs/G_B.pth")
-    torch.save(D_A.state_dict(), f"./parameters/cyclegan_mbs/D_A.pth")
-    torch.save(D_B.state_dict(), f"./parameters/cyclegan_mbs/D_B.pth")
-
+    ensure_dir("./parameters/")
+    torch.save(G_A.state_dict(), "./parameters/cyclegan_mbs/G_A.pth")
+    torch.save(G_B.state_dict(), "./parameters/cyclegan_mbs/G_B.pth")
+    torch.save(D_A.state_dict(), "./parameters/cyclegan_mbs/D_A.pth")
+    torch.save(D_B.state_dict(), "./parameters/cyclegan_mbs/D_B.pth")
