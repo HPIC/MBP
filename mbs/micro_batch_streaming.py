@@ -1,4 +1,4 @@
-from mbs.wrap_dataloader import wdataloader, wrap_dataset
+from mbs.wrap_dataloader import wrap_dataset
 from typing import List, Tuple, Union
 import types
 import torch
