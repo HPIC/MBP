@@ -677,9 +677,11 @@ tags
 # HPIC custom
 
 ## benchmark datasets
-benchmark/data/horse2zebra/
-benchmark/data/MNIST_DATASET/
-benchmark/data/__pycache__/
+benchmark/data/
+!benchmark/data/dataset.py
+!benchmark/data/get_dataset.sh
+
+## benchmark partial result
 benchmark/loss/
 benchmark/parameters/
 benchmark/result/
