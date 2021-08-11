@@ -11,7 +11,7 @@ from random import Random
 def cyclegan_dataset(path, image_size=256, batch_size=4):
     dataset = ImageDataset( dataset_path = path,
                             transform = transforms.Compose([
-                                        transforms.Resize(image_size, Image.BICUBIC),
+                                        transforms.Resize(image_size),
                                         transforms.ToTensor(),
                                         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]),
                             unaligned = True )
