@@ -226,12 +226,8 @@ if __name__=='__main__':
     # Define MicroBatchStreaming
     mbs = MicroBatchStreaming()
     dataloader = mbs.dataloader(dataloader)
-    
     opt_G = mbs.optimizer(opt_G)
     opt_D = mbs.optimizer(opt_D)
-
-    print(opt_G.__class__.__name__)
-    print(hasattr(opt_G, 'step_allreduce'))
 
     # Define check performance vars
     epoch_time = 0
@@ -248,12 +244,13 @@ if __name__=='__main__':
                 'A_loss' : 0.0,
                 'B_loss' : 0.0
             }
-            for idx, (up, real_A, real_B) in enumerate(dataloader):
+            pre_para = None
+            for idx, (ze, up, real_A, real_B) in enumerate(dataloader):
                 train_start = time.perf_counter()
 
                 # forward and backward
-                opt_G.zero_grad()
-                opt_D.zero_grad()
+                opt_G.zero_grad_allreduce(ze)
+                opt_D.zero_grad_allreduce(ze)
 
                 real_A = real_A.to(dev)
                 real_B = real_B.to(dev)
@@ -306,23 +303,22 @@ if __name__=='__main__':
                 A_loss.backward()
                 B_loss.backward()
 
-                loss_values[epoch]['g_loss'] += g_loss.detach().item()
-                loss_values[epoch]['A_loss'] += A_loss.detach().item()
-                loss_values[epoch]['B_loss'] += B_loss.detach().item()
-
                 opt_G.step_allreduce( up )
                 opt_D.step_allreduce( up )
 
                 train_end = time.perf_counter()
                 train_time += train_end - train_start
-                train_iter += 1
+                train_iter += 1 if up else 0
+                loss_values[epoch]['g_loss'] += g_loss.detach().item()
+                loss_values[epoch]['A_loss'] += A_loss.detach().item()
+                loss_values[epoch]['B_loss'] += B_loss.detach().item()
             epoch_end = time.perf_counter()
             epoch_time += epoch_end - epoch_start
             epoch_iter += 1
 
-            loss_values[epoch]['g_loss'] /= (len(dataloader) * idx)
-            loss_values[epoch]['A_loss'] /= (len(dataloader) * idx)
-            loss_values[epoch]['B_loss'] /= (len(dataloader) * idx)
+            loss_values[epoch]['g_loss'] /= idx
+            loss_values[epoch]['A_loss'] /= idx
+            loss_values[epoch]['B_loss'] /= idx
 
             print(
                 f"[{epoch+1}/{epochs}]",
