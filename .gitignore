@@ -677,9 +677,8 @@ tags
 # HPIC custom
 
 ## benchmark datasets
-benchmark/data/
-!benchmark/data/dataset.py
-!benchmark/data/get_dataset.sh
+benchmark/cyclegan/dataset/*
+!benchmark/cyclegan/dataset/get_dataset.sh
 
 ## benchmark partial result
 benchmark/loss/
