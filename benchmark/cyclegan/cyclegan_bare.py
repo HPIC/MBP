@@ -1,19 +1,16 @@
 import argparse
 import itertools
 import json
-import sys
 import time
 
 import torch
+import torch.nn as nn
 from data.dataset import cyclegan_dataset
-from torch import nn
-from util import ensure_dir, prepare_device
-
-sys.path.append("../")
+from torch.nn import init
 
 
 class Resnet_Generator(nn.Module):
-    def __init__(self, in_channel=3, out_channel=3, block=6):
+    def __init__(self, in_chhannel=3, out_channel=3, block=6):
         assert block > 0, "block must be bigger than zero."
         super(Resnet_Generator, self).__init__()
         model = []
@@ -28,7 +25,7 @@ class Resnet_Generator(nn.Module):
         channel = 64
         model += [
             nn.Conv2d(
-                in_channel,
+                in_chhannel,
                 channel,
                 kernel_size=7,
                 stride=1,
@@ -176,35 +173,29 @@ class PatchGAN_Discriminator(nn.Module):
 
 def initialize(model: torch.nn.Module):
     for para in model.parameters():
-        nn.init.normal_(para, 0, 0.002)
+        init.normal_(para, 0, 0.002)
 
 
 if __name__ == "__main__":
-    from mbs.micro_batch_streaming import MicroBatchStreaming
-
     parser = argparse.ArgumentParser(description="Test our framework with CycleGAN")
-    parser.add_argument("--device", "-d", type=int, default=0)
-    parser.add_argument("--batch_size", "-b", type=int, default=4)
-    parser.add_argument("--image_size", "-i", type=int, default=256)
-    parser.add_argument("--epoch", "-e", type=int, default=100)
-    parser.add_argument("--micro_batch", "-m", type=int, default=4)
+    parser.add_argument("-b", type=int, default=4)
+    parser.add_argument("--image-size", type=int, default=256)
+    parser.add_argument("-e", type=int, default=100)
     args = parser.parse_args()
 
     dataloader = cyclegan_dataset(
-        path="./data/horse2zebra/train",
-        image_size=args.image_size,
-        batch_size=args.batch_size,
+        path="./data/horse2zebra/train", image_size=args.image_size, batch_size=args.b
     )
-    device, _ = prepare_device(target=args.device)
-    epochs = args.epoch
+    dev = torch.device("cuda:0")
+    epochs = args.e
 
-    # Define Models
+    # Define Models.
     block = 9 if args.image_size == 256 else 6
     size_ = 15 if args.image_size == 256 else 7
-    G_A = Resnet_Generator(block=block).to(device)
-    G_B = Resnet_Generator(block=block).to(device)
-    D_A = PatchGAN_Discriminator().to(device)
-    D_B = PatchGAN_Discriminator().to(device)
+    G_A = Resnet_Generator(block=block).to(dev)
+    G_B = Resnet_Generator(block=block).to(dev)
+    D_A = PatchGAN_Discriminator().to(dev)
+    D_B = PatchGAN_Discriminator().to(dev)
 
     # initialization models
     initialize(model=G_A)
@@ -213,9 +204,9 @@ if __name__ == "__main__":
     initialize(model=D_B)
 
     # Define loss function.
-    cyc_l1loss = nn.L1Loss().to(device)
-    idt_l1loss = nn.L1Loss().to(device)
-    adv_loss = nn.MSELoss().to(device)
+    cyc_l1loss = nn.L1Loss().to(dev)
+    idt_l1loss = nn.L1Loss().to(dev)
+    adv_loss = nn.MSELoss().to(dev)
 
     # Define optimizers
     opt_G = torch.optim.Adam(
@@ -232,34 +223,26 @@ if __name__ == "__main__":
 
     loss_values = {}
 
-    # Define MicroBatchStreaming
-    mbs = MicroBatchStreaming()
-    dataloader = mbs.dataloader(dataloader)
-    opt_G = mbs.optimizer(opt_G)
-    opt_D = mbs.optimizer(opt_D)
-
     # Define check performance vars
     epoch_time = 0
     epoch_iter = 0
     train_time = 0
     train_iter = 0
 
-    ensure_dir("./loss/")
-    with open(f"./loss/cyclegan_mbs_{args.batch_size}_loss_value.json", "w") as file:
+    with open("./loss/cyclegan_origin_loss_value.json", "w") as file:
         json_file = {}
         for epoch in range(epochs):
             epoch_start = time.perf_counter()
             loss_values[epoch] = {"g_loss": 0.0, "A_loss": 0.0, "B_loss": 0.0}
-            pre_para = None
-            for idx, (ze, up, real_A, real_B) in enumerate(dataloader):
+            for idx, input in enumerate(dataloader):
                 train_start = time.perf_counter()
 
                 # forward and backward
-                opt_G.zero_grad_allreduce(ze)
-                opt_D.zero_grad_allreduce(ze)
+                opt_G.zero_grad()
+                opt_D.zero_grad()
 
-                real_A = real_A.to(device)
-                real_B = real_B.to(device)
+                real_A = input["A"].to(dev)
+                real_B = input["B"].to(dev)
 
                 fake_B = G_A(real_A)
                 recover_A = G_B(fake_B)
@@ -272,8 +255,8 @@ if __name__ == "__main__":
 
                 """ create real and fake label for adversarial loss """
                 batch_size = real_A.size(0)
-                real_label = torch.ones(batch_size, 1, size_, size_).to(device)
-                fake_label = torch.zeros(batch_size, 1, size_, size_).to(device)
+                real_label = torch.ones(batch_size, 1, size_, size_).to(dev)
+                fake_label = torch.zeros(batch_size, 1, size_, size_).to(dev)
 
                 fake_output_A = D_A(fake_A)
                 adv_loss_A = adv_loss(fake_output_A, real_label)
@@ -316,22 +299,28 @@ if __name__ == "__main__":
                 A_loss.backward()
                 B_loss.backward()
 
-                opt_G.step_allreduce(up)
-                opt_D.step_allreduce(up)
+                opt_G.step()
+                opt_D.step()
 
-                train_end = time.perf_counter()
-                train_time += train_end - train_start
-                train_iter += 1 if up else 0
                 loss_values[epoch]["g_loss"] += g_loss.detach().item()
                 loss_values[epoch]["A_loss"] += A_loss.detach().item()
                 loss_values[epoch]["B_loss"] += B_loss.detach().item()
+
+                train_end = time.perf_counter()
+                train_time += train_end - train_start
+                train_iter += 1
             epoch_end = time.perf_counter()
             epoch_time += epoch_end - epoch_start
             epoch_iter += 1
 
-            loss_values[epoch]["g_loss"] /= idx
-            loss_values[epoch]["A_loss"] /= idx
-            loss_values[epoch]["B_loss"] /= idx
+            loss_values[epoch]["g_loss"] /= len(dataloader)
+            loss_values[epoch]["A_loss"] /= len(dataloader)
+            loss_values[epoch]["B_loss"] /= len(dataloader)
+
+            torch.save(G_A.state_dict(), "./parameters/cyclegan_origin/G_A.pth")
+            torch.save(G_B.state_dict(), "./parameters/cyclegan_origin/G_B.pth")
+            torch.save(D_A.state_dict(), "./parameters/cyclegan_origin/D_A.pth")
+            torch.save(D_B.state_dict(), "./parameters/cyclegan_origin/D_B.pth")
 
             print(
                 f"[{epoch+1}/{epochs}]",
@@ -351,9 +340,3 @@ if __name__ == "__main__":
                 json_file[epoch + 1][name] = loss_values[epoch][name]
             print()
         json.dump(json_file, file, indent=4)
-
-    ensure_dir("./parameters/")
-    torch.save(G_A.state_dict(), "./parameters/cyclegan_mbs/G_A.pth")
-    torch.save(G_B.state_dict(), "./parameters/cyclegan_mbs/G_B.pth")
-    torch.save(D_A.state_dict(), "./parameters/cyclegan_mbs/D_A.pth")
-    torch.save(D_B.state_dict(), "./parameters/cyclegan_mbs/D_B.pth")
