@@ -3,10 +3,19 @@ from pathlib import Path
 import torch
 
 
-def ensure_dir(dirname):
-    dirname = Path(dirname)
-    if not dirname.is_dir():
-        dirname.mkdir(parents=True, exist_ok=False)
+def ensure_dir(dir_path: str):
+    path = Path(dir_path)
+    if not path.is_dir():
+        path.mkdir(parents=True, exist_ok=False)
+
+
+def ensure_file_can_create(path):
+    p = Path(path)
+    p.resolve()
+    if p.is_file:
+        ensure_dir(p.parent)
+    elif p.is_dir:
+        ensure_dir(p)
 
 
 def prepare_device(n_gpu_use: int = 0, target: int = 0):
