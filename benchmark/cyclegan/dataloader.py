@@ -18,10 +18,10 @@ def cyclegan_dataset(path, image_size=256, batch_size=4):
         ),
         unaligned=True,
     )
-    dataloader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=True, pin_memory=True
-    )
-    return dataloader
+    # dataloader = DataLoader(
+    #     dataset, batch_size=batch_size, shuffle=True, pin_memory=True
+    # )
+    return dataset
 
 
 class ImageDataset(Dataset):
