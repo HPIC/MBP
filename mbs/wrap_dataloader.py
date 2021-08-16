@@ -1,12 +1,13 @@
 import math
 import torch
 
+from torch.utils.data import DataLoader
 
-class wrap_dataset:
-    def __init__(self, _dataloader, _micro_batch_size) -> None:
-        self.dataloader = _dataloader
-        self.mini_batch_size = _dataloader.batch_size
-        self.micro_batch_size = _micro_batch_size
+class MBSDataloader(DataLoader):
+    def __init__(self, micro_batch_size, *args, **kwargs) -> None:
+        super().__init__( *args, **kwargs )
+        self.mini_batch_size = self.batch_size
+        self.micro_batch_size = micro_batch_size
 
     def chunk_dataset(self, dataset):
         rtn_dataset = []
@@ -31,7 +32,8 @@ class wrap_dataset:
         return rtn_dataset, num_chunk
 
     def __iter__(self):
-        for _, data in enumerate(self.dataloader):
+        _dataloader = self._get_iterator()
+        for data in _dataloader:
             micro_dataset, num_micro_batch = self.chunk_dataset(data)
             for midx in range(num_micro_batch):
                 zero = midx == 0

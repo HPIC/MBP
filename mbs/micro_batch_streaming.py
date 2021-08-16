@@ -1,7 +1,7 @@
 import types
 
 from mbs.types import ModelList
-from mbs.wrap_dataloader import wrap_dataset
+from mbs.wrap_dataloader import MBSDataloader
 
 
 class MicroBatchStreaming:
@@ -13,8 +13,8 @@ class MicroBatchStreaming:
         self.models: ModelList = []
         self.micro_batch_size = micro_batch_size
 
-    def set_dataloader(self, _dataloader):
-        return wrap_dataset(_dataloader, self.micro_batch_size)
+    def set_dataloader(self, *args, **kwargs):
+        return MBSDataloader(self.micro_batch_size, *args, **kwargs)
 
     def set_optimizer(self, _optim):
         _optim.step_accu = types.MethodType(step_accu, _optim)
