@@ -685,3 +685,6 @@ benchmark/loss/
 benchmark/parameters/
 benchmark/result/
 benchmark/test.py
+
+# 
+examples/MNIST
