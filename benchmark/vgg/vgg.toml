@@ -1,4 +1,15 @@
-title = "CycleGAN"
+title = "VGG"
+
+# Select model version (16, 19)
+[model]
+normbatch=False
+version=16
+
+# Setting Optimizer
+[optimizer]
+lr=0.05
+mometum=0.9
+decay=0.0005
 
 # Device Related Configurations
 [gpu]
@@ -11,12 +22,12 @@ epoch = 100
 # Dataset Related Configurations
 [dataset]
   [dataset.train]
-    path="./dataset/horse2zebra/train"
+    path="./dataset/imagenet2012"
     batch_size = 4
     image_size = 256
 
   [dataset.test]
-    path="./dataset/horse2zebra/test"
+    path="./dataset/imagenet2012"
     batch_size = 4
     image_size = 256
 
