@@ -35,6 +35,6 @@ def prepare_device(n_gpu_use: int = 0, target: int = 0):
             "available on this machine."
         )
         n_gpu_use = n_gpu
-    device = torch.device(f"cuda:{target}" if n_gpu_use > 0 else "cpu")
+    device = torch.device(f"cuda:{target}" if n_gpu > 0 else "cpu")
     list_ids = list(range(n_gpu_use))
     return device, list_ids
