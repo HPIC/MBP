@@ -40,11 +40,22 @@ class CycleGANTrainer:
         dataloader = cyclegan_dataset(
             path=dataset_config.path,
             image_size=dataset_config.image_size,
-            batch_size=dataset_config.batch_size,
+            batch_size=dataset_config.batch_size
         )
         return dataloader
 
-    def _get_cyclegan_models_optimizers(self, device: str, image_size: int) -> None:
+    @staticmethod
+    def _init_microbatch_stream(
+        dataloader: DataLoader, optim_list: List[Optimizer], micro_batch_size: int
+    ) -> List[Optimizer]:
+        # Define MicroBatchStreaming
+        mbs = MicroBatchStreaming()
+        dataloader = mbs.set_dataloader(dataloader, micro_batch_size)
+        for optim in optim_list:
+            optim = mbs.set_optimizer(optim)
+        return dataloader, optim_list
+
+    def _get_cyclegan_models_optimizers(self, device: torch.device, image_size: int) -> None:
         # Define Models
         block = 9 if image_size == 256 else 6
         self.size_ = 15 if image_size == 256 else 7
@@ -56,7 +67,7 @@ class CycleGANTrainer:
         initialize_model_list(models=[self.G_A, self.G_B, self.D_A, self.D_B])
 
         # Define loss function.
-        self.cyc_l1loss = nn.L1Loss().to(device)
+        self.cyc_l1loss = nn.L1Loss().to(device) 
         self.idt_l1loss = nn.L1Loss().to(device)
         self.adv_loss = nn.MSELoss().to(device)
 
@@ -75,31 +86,24 @@ class CycleGANTrainer:
 
         self.loss_values = {}
 
-    def _init_microbatch_stream(
-        dataloader: DataLoader, optim_list: List[Optimizer]
-    ) -> List[Optimizer]:
-        # Define MicroBatchStreaming
-        mbs = MicroBatchStreaming()
-        dataloader = mbs.dataloader(dataloader)
-        for optim in optim_list:
-            optim = mbs.optimizer(optim)
-        return dataloader, optim_list
-
     def train(self) -> None:
         device, _ = prepare_device(target=self.config.data.gpu.device)
         dataloader = self._get_cyclegan_data_loader(self.config.data.dataset.train)
+        self._get_cyclegan_models_optimizers(
+            device=device, image_size=self.config.data.dataset.train.image_size
+        )
 
         optim_list = [self.opt_G, self.opt_D]
 
         if self.config.data.microbatchstream.enable:
             dataloader, optim_list = self._init_microbatch_stream(
-                dataloader, optim_list
+                dataloader, optim_list, self.config.data.microbatchstream.micro_batch_size
             )
 
         self.loss_values = {}
 
         for epoch in range(self.config.data.train.epoch):
-            self._train_epoch(epoch, dataloader, self.loss_values)
+            self._train_epoch(epoch, dataloader, self.loss_values, device)
 
         self._save_state_dict(
             self.G_A.state_dict(), "./parameters/cyclegan_mbs/G_A.pth"
@@ -153,12 +157,12 @@ class CycleGANTrainer:
         epoch_start = time.perf_counter()
         loss_values[epoch] = {"g_loss": 0.0, "A_loss": 0.0, "B_loss": 0.0}
         # pre_para = None
-        for idx, (ze, up, real_A, real_B) in enumerate(dataloader):
+        for idx, (ze, up, (real_A, real_B, _, _)) in enumerate(dataloader):
             train_start = time.perf_counter()
 
             # forward and backward
-            self.opt_G.zero_grad_allreduce(ze)
-            self.opt_D.zero_grad_allreduce(ze)
+            self.opt_G.zero_grad_accu(ze)
+            self.opt_D.zero_grad_accu(ze)
 
             real_A = real_A.to(device)
             real_B = real_B.to(device)
@@ -222,8 +226,8 @@ class CycleGANTrainer:
             A_loss.backward()
             B_loss.backward()
 
-            self.opt_G.step_allreduce(up)
-            self.opt_D.step_allreduce(up)
+            self.opt_G.step_accu(up)
+            self.opt_D.step_accu(up)
 
             train_end = time.perf_counter()
             train_time += train_end - train_start

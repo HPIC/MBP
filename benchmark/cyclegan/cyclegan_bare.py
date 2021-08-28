@@ -5,7 +5,7 @@ import time
 
 import torch
 import torch.nn as nn
-from data.dataset import cyclegan_dataset
+from dataloader import cyclegan_dataset
 from torch.nn import init
 
 
@@ -184,7 +184,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     dataloader = cyclegan_dataset(
-        path="./data/horse2zebra/train", image_size=args.image_size, batch_size=args.b
+        path="./dataset/horse2zebra/train", image_size=args.image_size, batch_size=args.b
     )
     dev = torch.device("cuda:0")
     epochs = args.e
