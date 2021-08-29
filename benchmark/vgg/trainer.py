@@ -69,8 +69,7 @@ class VGGTrainer:
         self.opt = torch.optim.SGD( 
             self.vgg_model.parameters(), 
             lr=self.config.data.optimizer.lr,
-            momentum=self.config.data.optimizer.momentum,
-            weight_decay=self.config.data.optimizer.decay
+            weight_decay=self.config.data.optimizer.decay,
         )
 
     def train(self) -> None:
@@ -142,93 +141,29 @@ class VGGTrainer:
         train_iter = 0
 
         epoch_start = time.perf_counter()
-        loss_values[epoch] = {"g_loss": 0.0, "A_loss": 0.0, "B_loss": 0.0}
+        loss_values[epoch] = {"loss": 0.0}
         # pre_para = None
-        for idx, (ze, up, (real_A, real_B, _, _)) in enumerate(dataloader):
+        for idx, (ze, up, (image, label)) in enumerate(dataloader):
             train_start = time.perf_counter()
 
-            # forward and backward
-            self.opt_G.zero_grad_accu(ze)
-            self.opt_D.zero_grad_accu(ze)
+            input = image.to(device)
+            label = label.to(device)
+            output = self.vgg_model( input )
+            loss = self.criterion( output, label )
 
-            real_A = real_A.to(device)
-            real_B = real_B.to(device)
-
-            fake_B = self.G_A(real_A)
-            recover_A = self.G_B(fake_B)
-
-            fake_A = self.G_B(real_B)
-            recover_B = self.G_A(fake_A)
-
-            idt_B = self.G_A(real_B)
-            idt_A = self.G_B(real_A)
-
-            """ create real and fake label for adversarial loss """
-            batch_size = real_A.size(0)
-            real_label = torch.ones(batch_size, 1, self.size_, self.size_).to(device)
-            fake_label = torch.zeros(batch_size, 1, self.size_, self.size_).to(device)
-
-            fake_output_A = self.D_A(fake_A)
-            adv_loss_A = self.adv_loss(fake_output_A, real_label)
-            fake_output_B = self.D_B(fake_B)
-            adv_loss_B = self.adv_loss(fake_output_B, real_label)
-
-            """ Calculate cycle loss """
-            cyc_loss_A = self.cyc_l1loss(recover_A, real_A) * self.lambda_A
-            cyc_loss_B = self.cyc_l1loss(recover_B, real_B) * self.lambda_B
-
-            """ Calculate idt loss """
-            idt_loss_A = (
-                self.idt_l1loss(idt_A, real_A) * self.lambda_A * self.lambda_idt
-            )
-            idt_loss_B = (
-                self.idt_l1loss(idt_B, real_B) * self.lambda_B * self.lambda_idt
-            )
-            g_loss = (
-                adv_loss_A
-                + adv_loss_B
-                + cyc_loss_A
-                + cyc_loss_B
-                + idt_loss_A
-                + idt_loss_B
-            )
-
-            real_output_A = self.D_A(real_A)
-
-            real_A_loss = self.adv_loss(real_output_A, real_label)
-
-            fake_output_A = self.D_A(fake_A.detach())
-            fake_A_loss = self.adv_loss(fake_output_A, fake_label)
-
-            real_output_B = self.D_B(real_B)
-            real_B_loss = self.adv_loss(real_output_B, real_label)
-
-            fake_output_B = self.D_B(fake_B.detach())
-            fake_B_loss = self.adv_loss(fake_output_B, fake_label)
-
-            A_loss = real_A_loss + fake_A_loss
-            B_loss = real_B_loss + fake_B_loss
-
-            g_loss.backward()
-            A_loss.backward()
-            B_loss.backward()
-
-            self.opt_G.step_accu(up)
-            self.opt_D.step_accu(up)
+            self.opt.zero_grad_accu(ze)
+            loss.backward()
+            self.opt.step_accu(up)
 
             train_end = time.perf_counter()
             train_time += train_end - train_start
             train_iter += 1 if up else 0
-            loss_values[epoch]["g_loss"] += g_loss.detach().item()
-            loss_values[epoch]["A_loss"] += A_loss.detach().item()
-            loss_values[epoch]["B_loss"] += B_loss.detach().item()
+            loss_values[epoch]["loss"] += loss.detach().item()
         epoch_end = time.perf_counter()
         epoch_time += epoch_end - epoch_start
         epoch_iter += 1
 
-        loss_values[epoch]["g_loss"] /= idx
-        loss_values[epoch]["A_loss"] /= idx
-        loss_values[epoch]["B_loss"] /= idx
+        loss_values[epoch]["loss"] /= idx
 
 
 def train(config: ConfigParser):

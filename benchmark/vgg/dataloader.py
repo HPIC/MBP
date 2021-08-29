@@ -1,18 +1,20 @@
 from torch.utils.data.dataloader import DataLoader
 from torchvision.datasets import ImageNet
+from torchvision.datasets import ImageFolder
 import torchvision.transforms as transforms
+from torchvision.transforms.transforms import CenterCrop
 
-def get_dataset(imagenet_path, image_size, batch_size):
-    imagenet_dataset = ImageNet(
-        imagenet_path,
+def get_dataset(path, image_size, batch_size):
+    imagenet_dataset = ImageFolder(
+        path,
         transform=transforms.Compose(
             [
                 transforms.Resize(image_size),
+                transforms.CenterCrop(224),
                 transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ]
         ),
-        unaligned=True,
     )
     imagenet_dataloader = DataLoader(
         imagenet_dataset,

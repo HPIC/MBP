@@ -2,14 +2,14 @@ title = "VGG"
 
 # Select model version (16, 19)
 [model]
-normbatch=False
-version=16
+normbatch = false
+version = 16
 
 # Setting Optimizer
 [optimizer]
-lr=0.05
-mometum=0.9
-decay=0.0005
+lr = 0.05
+mometum = 0.9
+decay = 0.0005
 
 # Device Related Configurations
 [gpu]
