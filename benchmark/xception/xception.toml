@@ -1,0 +1,34 @@
+title = "Xception"
+
+# Setting Optimizer
+[optimizer]
+lr = 0.045
+mometum = 0.9
+decay = 0.94
+
+# Device Related Configurations
+[gpu]
+device = 0
+
+# Train Related Configurations
+[train]
+epoch = 100
+
+# Dataset Related Configurations
+[dataset]
+  num_class = 1000
+  [dataset.train]
+    path="./dataset/imagenet2012"
+    batch_size = 4
+    image_size = 256
+
+  [dataset.test]
+    path="./dataset/imagenet2012"
+    batch_size = 4
+    image_size = 256
+
+
+# Micro Batch Streaming
+[microbatchstream]
+enable = true
+micro_batch_size = 4
