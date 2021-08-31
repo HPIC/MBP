@@ -678,6 +678,8 @@ tags
 
 ## benchmark datasets
 benchmark/*/dataset/*
+benchmark/*/loss/*
+benchmark/*/parameters/*
 
 ## benchmark partial result
 benchmark/loss/

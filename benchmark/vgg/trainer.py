@@ -94,7 +94,7 @@ class VGGTrainer:
         for epoch in range(self.config.data.train.epoch):
             self._train_epoch(epoch, dataloader, self.loss_values, device)
 
-        self._save_log(self.json_file, self.config.data.microbatchstream.enable, self.config.data.train.batch_size)
+        self._save_log(self.json_file, self.config.data.microbatchstream.enable, self.config.data.dataset.train.batch_size)
 
         self._save_state_dict(
             self.vgg_model.state_dict(),
