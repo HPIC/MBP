@@ -1,6 +1,6 @@
 import itertools
 
-# import json
+import json
 import time
 from typing import List
 
@@ -23,6 +23,7 @@ from mbs.micro_batch_streaming import MicroBatchStreaming
 class VGGTrainer:
     def __init__(self, config: ConfigParser) -> None:
         self.config = config
+        self.json_file = {}
 
     @classmethod
     def _save_state_dict(cls, state_dict: dict, path: str) -> None:
@@ -30,17 +31,18 @@ class VGGTrainer:
         torch.save(state_dict, path)
 
     @classmethod
-    def _save_log(cls, log, batch_size) -> None:
+    def _save_log(cls, log, is_mbs, batch_size) -> None:
         ensure_dir("./loss/")
-        # with open(f"./loss/cyclegan_mbs_{batch_size}_loss_value.json", "w") as file:
-        #     json_file = {}
+        with open(f"./loss/vgg_mbs_{is_mbs}_{batch_size}_loss_value.json", "w") as file:
+            json.dump(log, file, indent=4)
 
     @classmethod
     def _get_data_loader(cls, dataset_config: DotDict) -> DataLoader:
         dataloader = get_dataset(
-            path=dataset_config.path,
+            path=dataset_config.path + dataset_config.type,
+            dataset_type=dataset_config.type,
+            batch_size=dataset_config.batch_size,
             image_size=dataset_config.image_size,
-            batch_size=dataset_config.batch_size
         )
         return dataloader
 
@@ -59,7 +61,8 @@ class VGGTrainer:
         # Define Models
         self.vgg_model = select_model(
             self.config.data.model.normbatch,
-            self.config.data.model.version
+            self.config.data.model.version,
+            self.config.data.dataset.train.num_classes
         ).to(device)
 
         # Define loss function.
@@ -91,46 +94,12 @@ class VGGTrainer:
         for epoch in range(self.config.data.train.epoch):
             self._train_epoch(epoch, dataloader, self.loss_values, device)
 
-        self._save_state_dict(
-            self.G_A.state_dict(), "./parameters/cyclegan_mbs/G_A.pth"
-        )
-        self._save_state_dict(
-            self.G_B.state_dict(), "./parameters/cyclegan_mbs/G_B.pth"
-        )
-        self._save_state_dict(
-            self.D_A.state_dict(), "./parameters/cyclegan_mbs/D_A.pth"
-        )
-        self._save_state_dict(
-            self.D_B.state_dict(), "./parameters/cyclegan_mbs/D_B.pth"
-        )
+        self._save_log(self.json_file, self.config.data.microbatchstream.enable, self.config.data.train.batch_size)
 
-    def _epoch_writer(
-        self,
-        epoch: int,
-        epochs: int,
-        train_time: float,
-        train_iter: int,
-        epoch_time: float,
-        epoch_iter: int,
-    ) -> None:
-        print(
-            f"[{epoch+1}/{epochs}]",
-            "train time :",
-            format(train_time / train_iter, ".3f") + "s",
-            "epoch time :",
-            format(epoch_time / epoch_iter, ".3f") + "s",
-            end=" ",
+        self._save_state_dict(
+            self.vgg_model.state_dict(),
+            f"./parameters/{self.config.data.dataset.train.type}_mbs_{self.config.data.microbatchstream.enable}/vgg.pth"
         )
-        # json_file[epoch + 1] = {}
-        for _, name in enumerate(self.loss_values[epoch]):
-            print(
-                f"{name} :",
-                format(self.loss_values[epoch][name], ".2f"),
-                end=" ",
-            )
-        #     json_file[epoch + 1][name] = loss_values[epoch][name]
-        # print()
-        # json.dump(json_file, file, indent=4)
 
     def _train_epoch(self, epoch, dataloader, loss_values, device) -> None:
 
@@ -153,17 +122,53 @@ class VGGTrainer:
 
             self.opt.zero_grad_accu(ze)
             loss.backward()
-            self.opt.step_accu(up)
+            self.opt.step_accu(ze)
 
             train_end = time.perf_counter()
             train_time += train_end - train_start
-            train_iter += 1 if up else 0
+            train_iter += 1
             loss_values[epoch]["loss"] += loss.detach().item()
         epoch_end = time.perf_counter()
         epoch_time += epoch_end - epoch_start
         epoch_iter += 1
 
         loss_values[epoch]["loss"] /= idx
+        if epoch == 0:
+            self.init_loss_value = loss_values[epoch]["loss"]
+
+        self._epoch_writer(
+            epoch,
+            self.config.data.train.epoch,
+            train_time,
+            train_iter,
+            epoch_time,
+            epoch_iter
+        )
+
+    def _epoch_writer(
+        self,
+        epoch: int,
+        epochs: int,
+        train_time: float,
+        train_iter: int,
+        epoch_time: float,
+        epoch_iter: int,
+    ) -> None:
+        print(
+            f"[{epoch+1}/{epochs}]",
+            "train time :",
+            format(train_time / train_iter, ".3f") + "s",
+            "epoch time :",
+            format(epoch_time / epoch_iter, ".3f") + "s",
+            end=" ",
+        )
+        self.json_file[epoch + 1] = {}
+        for _, name in enumerate(self.loss_values[epoch]):
+            print(
+                f"{name} :",
+                format(self.loss_values[epoch][name], ".2f")
+            )
+            self.json_file[epoch + 1][name] = self.loss_values[epoch][name]
 
 
 def train(config: ConfigParser):

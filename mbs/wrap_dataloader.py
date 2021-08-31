@@ -9,7 +9,7 @@ class MBSDataloader(DataLoader):
         target_dataloader : DataLoader,
         micro_batch_size : int = None
     ) -> None:
-        self.dataloader = target_dataloader._get_iterator() # Get iterator from dataloader by user.
+        self.dataloader = target_dataloader # Get iterator from dataloader by user.
         self.mini_batch_size = target_dataloader.batch_size # Get batch size from dataloader by user.
 
         # setting micro batch size

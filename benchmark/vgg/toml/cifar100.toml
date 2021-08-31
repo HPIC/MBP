@@ -22,12 +22,17 @@ epoch = 100
 # Dataset Related Configurations
 [dataset]
   [dataset.train]
-    path="./dataset/imagenet2012"
-    batch_size = 4
+    type="cifar100"
+    path="./dataset/"
+    num_classes = 100
+    batch_size = 32
     image_size = 256
+    num_worker = 16
 
   [dataset.test]
-    path="./dataset/imagenet2012"
+    type="cifar100"
+    path="./dataset/"
+    num_classes = 100
     batch_size = 4
     image_size = 256
 

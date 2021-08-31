@@ -12,27 +12,15 @@ def _plot_json(target_file: str):
         json_data = json.load(json_file)
 
         g_loss = []
-        dA_loss = []
-        dB_loss = []
         for index in json_data:
             curr = json_data[index]
-            g_loss.append(curr["g_loss"])
-            dA_loss.append(curr["A_loss"])
-            dB_loss.append(curr["B_loss"])
+            g_loss.append(curr["loss"])
 
-        plt.subplot(121)
         plt.plot(g_loss)
-        plt.legend(["G loss"])
+        plt.legend(["loss"])
         plt.ylabel("loss-value")
         plt.xlabel("epoch")
-        plt.xlim([0, 100])
-
-        plt.subplot(122)
-        plt.plot(dA_loss, "r", dB_loss, "b")
-        plt.legend(["D_A loss", "D_B loss"])
-        plt.ylabel("loss-value")
-        plt.xlabel("epoch")
-        plt.xlim([0, 100])
+        plt.xlim([0, len(g_loss)])
 
         plt.savefig(f"{target_file}.png", dpi=600)
 
