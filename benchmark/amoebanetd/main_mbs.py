@@ -8,11 +8,17 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.optim import SGD
+from torch.optim.optimizer import Optimizer
+from torch.optim.lr_scheduler import LambdaLR
+from torch.utils.data import DataLoader
 import torch.utils.data
+import torchvision
 
 from amoebanet import amoebanetd
-import torchgpipe
 from torchgpipe import GPipe
+
+# Get Micro-batch streaming.
+from mbs.micro_batch_streaming import MicroBatchStreaming
 
 Stuffs = Tuple[nn.Module, int, List[torch.device]]  # (model, batch_size, devices)
 Experiment = Callable[[nn.Module, List[int]], Stuffs]
@@ -34,7 +40,7 @@ class Experiments:
 
     @staticmethod
     def n2m1(model: nn.Module, devices: List[int]) -> Stuffs:
-        batch_size = 96
+        batch_size = 64
         chunks = 1
         balance = [7, 17]
         return _gpipe(model, devices, batch_size, chunks, balance, checkpoint='always')
@@ -108,6 +114,52 @@ EXPERIMENTS: Dict[str, Experiment] = {
     'n8m32': Experiments.n8m32,
 }
 
+def dataloaders(batch_size: int, num_workers: int = 32) -> Tuple[DataLoader, DataLoader]:
+    num_workers = num_workers if batch_size <= 4096 else num_workers // 2
+
+    post_transforms = torchvision.transforms.Compose([
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+    ])
+
+    train_dataset = torchvision.datasets.ImageNet(
+        root='imagenet',
+        split='train',
+        transform=torchvision.transforms.Compose([
+            torchvision.transforms.RandomResizedCrop(224, scale=(0.08, 1.0)),
+            torchvision.transforms.RandomHorizontalFlip(),
+            post_transforms,
+        ])
+    )
+    test_dataset = torchvision.datasets.ImageNet(
+        root='imagenet',
+        split='val',
+        transform=torchvision.transforms.Compose([
+            torchvision.transforms.Resize(256),
+            torchvision.transforms.CenterCrop(224),
+            post_transforms,
+        ])
+    )
+
+    train_dataloader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=True,
+        drop_last=True,
+        shuffle=True,
+    )
+    test_dataloader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=True,
+        drop_last=False,
+        shuffle=False,
+    )
+
+    return train_dataloader, test_dataloader
+
 
 BASE_TIME: float = 0
 
@@ -144,6 +196,19 @@ def parse_devices(ctx: Any, param: Any, value: Optional[str]) -> List[int]:
     return [int(x) for x in value.split(',')]
 
 
+#@staticmethod
+def _init_microbatch_stream(
+    train_dataloader: DataLoader, valid_dataloader: DataLoader, optim_list: List[Optimizer], micro_batch_size: int
+) -> List[Optimizer]:
+    # Define MicroBatchStreaming
+    mbs = MicroBatchStreaming()
+    train_dataloader = mbs.set_dataloader(train_dataloader, micro_batch_size)
+    valid_dataloader = mbs.set_dataloader(valid_dataloader, micro_batch_size)
+    for optim in optim_list:
+        optim = mbs.set_optimizer(optim)
+    return train_dataloader, valid_dataloader, optim_list
+
+
 @click.command()
 @click.pass_context
 @click.argument(
@@ -178,6 +243,7 @@ def cli(ctx: click.Context,
     if skip_epochs >= epochs:
         ctx.fail('--skip-epochs=%d must be less than --epochs=%d' % (skip_epochs, epochs))
 
+    relu_inplace = 'gpipe' not in experiment
     model: nn.Module = amoebanetd(num_classes=1000, num_layers=18, num_filters=256)
 
     f: Experiment = EXPERIMENTS[experiment]
@@ -187,40 +253,48 @@ def cli(ctx: click.Context,
         # Examples:
         #   ValueError: too few devices to hold given partitions (devices: 1, paritions: 2)
         ctx.fail(str(exc))
+    
+    # Prepare dataloaders.
+    train_dataloader, valid_dataloader = dataloaders(batch_size)
+    micro_batch_size = 40
 
-    optimizer = SGD(model.parameters(), lr=0.1)
+    # Optimizer with LR scheduler
+    steps = len(train_dataloader)
+    steps_valid = len(valid_dataloader)
+    lr_multiplier = max(1.0, batch_size / 256)
+    optimizer = SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4, nesterov=True)
+
+    optim_list = [optimizer]
+
+    train_dataloader, valid_dataloader, optim_list = _init_microbatch_stream(train_dataloader, valid_dataloader, optim_list, micro_batch_size)
+
+    def gradual_warmup_linear_scaling(step: int) -> float:
+        epoch = step / steps
+
+        # Gradual warmup
+        warmup_ratio = min(4.0, epoch) / 4.0
+        multiplier = warmup_ratio * (lr_multiplier - 1.0) + 1.0
+
+        if epoch < 30:
+            return 1.0 * multiplier
+        elif epoch < 60:
+            return 0.1 * multiplier
+        elif epoch < 80:
+            return 0.01 * multiplier
+        return 0.001 * multiplier
+
+    scheduler = LambdaLR(optimizer, lr_lambda=gradual_warmup_linear_scaling)
 
     in_device = _devices[0]
     out_device = _devices[-1]
     torch.cuda.set_device(in_device)
 
-    # This experiment cares about only training speed, rather than accuracy.
-    # To eliminate any overhead due to data loading, we use fake random 224x224
-    # images over 1000 labels.
-    dataset_size = 10000
-
-    input = torch.rand(batch_size, 3, 224, 224, device=in_device)
-    target = torch.randint(1000, (batch_size,), device=out_device)
-    data = [(input, target)] * (dataset_size//batch_size)
-
-    if dataset_size % batch_size != 0:
-        last_input = input[:dataset_size % batch_size]
-        last_target = target[:dataset_size % batch_size]
-        data.append((last_input, last_target))
-
     # HEADER ======================================================================================
 
-    title = f'{experiment}, {skip_epochs+1}-{epochs} epochs'
+    title = '%s, %d devices, %d batch, %d-%d epochs'\
+            '' % (experiment, len(_devices), batch_size, skip_epochs+1, epochs)
     click.echo(title)
-
-    if isinstance(model, GPipe):
-        click.echo(f'batch size: {batch_size}, chunks: {model.chunks}, '
-                   f'balance: {model.balance}, checkpoint: {model.checkpoint}')
-    else:
-        click.echo(f'batch size: {batch_size}')
-
-    click.echo('torchgpipe: %s, python: %s, torch: %s, cudnn: %s, cuda: %s, gpu: %s' % (
-        torchgpipe.__version__,
+    click.echo('python: %s, torch: %s, cudnn: %s, cuda: %s, gpu: %s' % (
         platform.python_version(),
         torch.__version__,
         torch.backends.cudnn.version(),
@@ -232,35 +306,85 @@ def cli(ctx: click.Context,
     global BASE_TIME
     BASE_TIME = time.time()
 
-    def run_epoch(epoch: int) -> Tuple[float, float]:
+    def evaluate(dataloader: DataLoader, steps) -> Tuple[float, float]:
+        tick = time.time()
+        data_tested = 0
+        loss_sum = torch.zeros(1, device=out_device)
+        accuracy_sum = torch.zeros(1, device=out_device)
+        model.eval()
+        with torch.no_grad():
+            for i, (ze, up, (input, target)) in enumerate(dataloader):
+                current_batch = input.size(0)
+                data_tested += current_batch
+                input = input.to(device=in_device)
+                target = target.to(device=out_device)
+
+                output = model(input)
+
+                loss = F.cross_entropy(output, target)
+                loss_sum += loss * current_batch
+
+                _, predicted = torch.max(output, 1)
+                correct = (predicted == target).sum()
+                accuracy_sum += correct
+
+                percent = i / steps * 100
+                throughput = data_tested / (time.time() - tick)
+                log('valid | %d%% | %.3f samples/sec (estimated)'
+                    '' % (percent, throughput), clear=True, nl=False)
+
+        loss = loss_sum / data_tested
+        accuracy = accuracy_sum / data_tested
+
+        return loss.item(), accuracy.item()
+
+
+    def run_epoch(epoch: int, steps) -> Tuple[float, float]:
         torch.cuda.synchronize(in_device)
         tick = time.time()
 
+        #steps = len(train_dataloader)
         data_trained = 0
-        for i, (input, target) in enumerate(data):
-            data_trained += input.size(0)
+        loss_sum = torch.zeros(1, device=out_device)
+        model.train()
+        for i, (ze, up, (input, target)) in enumerate(train_dataloader):
+            data_trained += micro_batch_size
+            input = input.to(device=in_device, non_blocking=True)
+            target = target.to(device=out_device, non_blocking=True)
 
             output = model(input)
             loss = F.cross_entropy(output, target)
+            #optimizer.zero_grad()
+            optimizer.zero_grad_accu(ze)
             loss.backward()
+            optimizer.step_accu(ze)
+            #optimizer.step()
+            scheduler.step()
 
-            optimizer.step()
-            optimizer.zero_grad()
+            loss_sum += loss.detach() * batch_size
 
             # 00:01:02 | 1/20 epoch (42%) | 200.000 samples/sec (estimated)
-            percent = (i+1) / len(data) * 100
+            percent = i / steps * 100
             throughput = data_trained / (time.time()-tick)
-            log('%d/%d epoch (%d%%) | %.3f samples/sec (estimated)'
-                '' % (epoch+1, epochs, percent, throughput), clear=True, nl=False)
+            log('train | %d/%d epoch (%d%%) | lr:%.5f | %.3f samples/sec (estimated)'
+                '' % (epoch+1, epochs, percent, scheduler.get_lr()[0], throughput),
+                clear=True, nl=False)
 
         torch.cuda.synchronize(in_device)
         tock = time.time()
 
+        train_loss = loss_sum.item() / data_trained
+        valid_loss, valid_accuracy = evaluate(valid_dataloader)
+        torch.cuda.synchronize(in_device)
+
         # 00:02:03 | 1/20 epoch | 200.000 samples/sec, 123.456 sec/epoch
         elapsed_time = tock - tick
-        throughput = dataset_size / elapsed_time
-        log('%d/%d epoch | %.3f samples/sec, %.3f sec/epoch'
-            '' % (epoch+1, epochs, throughput, elapsed_time), clear=True)
+        throughput = data_trained / elapsed_time
+        log('%d/%d epoch | lr:%.5f | train loss:%.3f %.3f samples/sec | '
+            'valid loss:%.3f accuracy:%.3f'
+            '' % (epoch+1, epochs, scheduler.get_lr()[0], train_loss, throughput,
+                  valid_loss, valid_accuracy),
+            clear=True)
 
         return throughput, elapsed_time
 
@@ -269,23 +393,26 @@ def cli(ctx: click.Context,
 
     hr()
     for epoch in range(epochs):
-        throughput, elapsed_time = run_epoch(epoch)
+        throughput, elapsed_time = run_epoch(epoch, steps)
 
         if epoch < skip_epochs:
             continue
 
         throughputs.append(throughput)
         elapsed_times.append(elapsed_time)
+
+    _, valid_accuracy = evaluate(valid_dataloader, steps_valid)
     hr()
 
     # RESULT ======================================================================================
 
     # pipeline-4, 2-10 epochs | 200.000 samples/sec, 123.456 sec/epoch (average)
     n = len(throughputs)
-    throughput = sum(throughputs) / n
-    elapsed_time = sum(elapsed_times) / n
-    click.echo('%s | %.3f samples/sec, %.3f sec/epoch (average)'
-               '' % (title, throughput, elapsed_time))
+    throughput = sum(throughputs) / n if n > 0 else 0.0
+    elapsed_time = sum(elapsed_times) / n if n > 0 else 0.0
+    click.echo('%s | valid accuracy: %.4f | %.3f samples/sec, %.3f sec/epoch (average)'
+               '' % (title, valid_accuracy, throughput, elapsed_time))
+
 
 
 if __name__ == '__main__':
