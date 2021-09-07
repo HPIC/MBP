@@ -1,3 +1,0 @@
-[submodule "convNet.pytorch"]
-	path = convNet.pytorch
-	url = https://github.com/eladhoffer/convNet.pytorch.git
