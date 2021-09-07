@@ -259,7 +259,7 @@ def cli(ctx: click.Context,
     micro_batch_size = 40
 
     # Optimizer with LR scheduler
-    steps = len(train_dataloader)
+    steps_test = len(train_dataloader)
     steps_valid = len(valid_dataloader)
     lr_multiplier = max(1.0, batch_size / 256)
     optimizer = SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4, nesterov=True)
@@ -269,7 +269,7 @@ def cli(ctx: click.Context,
     train_dataloader, valid_dataloader, optim_list = _init_microbatch_stream(train_dataloader, valid_dataloader, optim_list, micro_batch_size)
 
     def gradual_warmup_linear_scaling(step: int) -> float:
-        epoch = step / steps
+        epoch = step / steps_test
 
         # Gradual warmup
         warmup_ratio = min(4.0, epoch) / 4.0
@@ -313,7 +313,7 @@ def cli(ctx: click.Context,
         accuracy_sum = torch.zeros(1, device=out_device)
         model.eval()
         with torch.no_grad():
-            for i, (ze, up, (input, target)) in enumerate(dataloader):
+            for i, (input, target) in enumerate(dataloader):
                 current_batch = input.size(0)
                 data_tested += current_batch
                 input = input.to(device=in_device)
@@ -347,18 +347,16 @@ def cli(ctx: click.Context,
         data_trained = 0
         loss_sum = torch.zeros(1, device=out_device)
         model.train()
-        for i, (ze, up, (input, target)) in enumerate(train_dataloader):
+        for i, (input, target) in enumerate(train_dataloader):
             data_trained += micro_batch_size
             input = input.to(device=in_device, non_blocking=True)
             target = target.to(device=out_device, non_blocking=True)
 
             output = model(input)
             loss = F.cross_entropy(output, target)
-            #optimizer.zero_grad()
-            optimizer.zero_grad_accu(ze)
+            optimizer.zero_grad()
             loss.backward()
-            optimizer.step_accu(ze)
-            #optimizer.step()
+            optimizer.step()
             scheduler.step()
 
             loss_sum += loss.detach() * batch_size
@@ -374,7 +372,7 @@ def cli(ctx: click.Context,
         tock = time.time()
 
         train_loss = loss_sum.item() / data_trained
-        valid_loss, valid_accuracy = evaluate(valid_dataloader)
+        valid_loss, valid_accuracy = evaluate(valid_dataloader, steps_valid)
         torch.cuda.synchronize(in_device)
 
         # 00:02:03 | 1/20 epoch | 200.000 samples/sec, 123.456 sec/epoch
@@ -393,7 +391,7 @@ def cli(ctx: click.Context,
 
     hr()
     for epoch in range(epochs):
-        throughput, elapsed_time = run_epoch(epoch, steps)
+        throughput, elapsed_time = run_epoch(epoch, steps_test)
 
         if epoch < skip_epochs:
             continue

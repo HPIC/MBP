@@ -18,6 +18,7 @@ from torchgpipe import GPipe
 
 # Get Micro-batch streaming.
 from mbs.micro_batch_streaming import MicroBatchStreaming
+import json
 
 Stuffs = Tuple[nn.Module, int, List[torch.device]]  # (model, batch_size, devices)
 Experiment = Callable[[nn.Module, List[int]], Stuffs]
@@ -61,7 +62,7 @@ class Experiments:
 
     @staticmethod
     def dataparallel1k(model: nn.Module, devices: List[int]) -> Stuffs:
-        batch_size = 1024
+        batch_size = 512
 
         devices = [devices[0], devices[1], devices[2], devices[3]]
         model.to(devices[0])
@@ -262,7 +263,7 @@ def cli(ctx: click.Context,
     micro_batch_size = 32
 
     # Optimizer with LR scheduler
-    steps = len(train_dataloader)
+    steps_train = len(train_dataloader)
     steps_valid = len(valid_dataloader)
     lr_multiplier = max(1.0, batch_size / 256)
     optimizer = SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4, nesterov=True)
@@ -272,7 +273,7 @@ def cli(ctx: click.Context,
     train_dataloader, valid_dataloader, optim_list = _init_microbatch_stream(train_dataloader, valid_dataloader, optim_list, micro_batch_size)
 
     def gradual_warmup_linear_scaling(step: int) -> float:
-        epoch = step / steps
+        epoch = step / steps_train
 
         # Gradual warmup
         warmup_ratio = min(4.0, epoch) / 4.0
@@ -311,13 +312,12 @@ def cli(ctx: click.Context,
 
     def evaluate(dataloader: DataLoader, steps) -> Tuple[float, float]:
         tick = time.time()
-        #steps = len(dataloader)
         data_tested = 0
         loss_sum = torch.zeros(1, device=out_device)
         accuracy_sum = torch.zeros(1, device=out_device)
         model.eval()
         with torch.no_grad():
-            for i, (ze, up, (input, target)) in enumerate(dataloader):
+            for i, (input, target) in enumerate(dataloader):
                 current_batch = input.size(0)
                 data_tested += current_batch
                 input = input.to(device=in_device)
@@ -346,26 +346,19 @@ def cli(ctx: click.Context,
         torch.cuda.synchronize(in_device)
         tick = time.time()
 
-        #steps = len(train_dataloader)
         data_trained = 0
         loss_sum = torch.zeros(1, device=out_device)
         model.train()
-        for i, (ze, up, (input, target)) in enumerate(train_dataloader):
+        for i, (input, target) in enumerate(train_dataloader):
             data_trained += micro_batch_size
-            
             input = input.to(device=in_device, non_blocking=True)
             target = target.to(device=out_device, non_blocking=True)
+            optimizer.zero_grad()
             output = model(input)
             loss = F.cross_entropy(output, target)
 
-            # optimizer.zero_grad()
-            # loss.backward()
-            # optimizer.step()
-
-            optimizer.zero_grad_accu(ze)
             loss.backward()
-            optimizer.step_accu(ze)
-            
+            optimizer.step()
             scheduler.step()
 
             loss_sum += loss.detach() * micro_batch_size
@@ -380,7 +373,7 @@ def cli(ctx: click.Context,
         tock = time.time()
 
         train_loss = loss_sum.item() / data_trained
-        valid_loss, valid_accuracy = evaluate(valid_dataloader)
+        valid_loss, valid_accuracy = evaluate(valid_dataloader, steps_valid)
         torch.cuda.synchronize(in_device)
 
         elapsed_time = tock - tick
@@ -391,6 +384,8 @@ def cli(ctx: click.Context,
                   valid_loss, valid_accuracy),
             clear=True)
 
+        
+
         return throughput, elapsed_time
 
     throughputs = []
@@ -398,7 +393,7 @@ def cli(ctx: click.Context,
 
     hr()
     for epoch in range(epochs):
-        throughput, elapsed_time = run_epoch(epoch, steps)
+        throughput, elapsed_time = run_epoch(epoch, steps_train)
 
         if epoch < skip_epochs:
             continue
