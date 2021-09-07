@@ -1,12 +1,10 @@
-import itertools
-
 import json
 import time
 from typing import List
 
 # Get dataset and model
 from dataloader import get_dataset
-from models.xception.xception import Xception
+from models.efficientnet.effinet import EfficientNetB0
 
 # PyTorch
 import torch
@@ -20,7 +18,7 @@ from util.util import ensure_dir, ensure_file_can_create, prepare_device
 from mbs.micro_batch_streaming import MicroBatchStreaming
 
 
-class XcepTrainer:
+class ENETTrainer:
     def __init__(self, config: ConfigParser) -> None:
         self.config = config
         self.json_file = {}
@@ -33,7 +31,7 @@ class XcepTrainer:
     @classmethod
     def _save_log(cls, log, is_mbs, batch_size) -> None:
         ensure_dir("./loss/")
-        with open(f"./loss/xcep_mbs_{is_mbs}_{batch_size}_loss_value.json", "w") as file:
+        with open(f"./loss/enet_mbs_{is_mbs}_{batch_size}_loss_value.json", "w") as file:
             json.dump(log, file, indent=4)
 
     @classmethod
@@ -59,7 +57,7 @@ class XcepTrainer:
 
     def _get_model_optimizer(self, device: torch.device, image_size: int) -> None:
         # Define Models
-        self.enet_model = Xception(
+        self.model = EfficientNetB0(
             self.config.data.dataset.train.num_classes
         ).to(device)
 
@@ -68,7 +66,7 @@ class XcepTrainer:
 
         # Define optimizers
         self.opt = torch.optim.SGD( 
-            self.enet_model.parameters(), 
+            self.model.parameters(), 
             lr=self.config.data.optimizer.lr,
             weight_decay=self.config.data.optimizer.decay,
         )
@@ -95,8 +93,8 @@ class XcepTrainer:
         self._save_log(self.json_file, self.config.data.microbatchstream.enable, self.config.data.dataset.train.batch_size)
 
         self._save_state_dict(
-            self.enet_model.state_dict(),
-            f"./parameters/{self.config.data.dataset.train.type}_mbs_{self.config.data.microbatchstream.enable}/model.pth"
+            self.model.state_dict(),
+            f"./parameters/{self.config.data.dataset.train.type}_mbs_{self.config.data.microbatchstream.enable}/vgg.pth"
         )
 
     def _train_epoch(self, epoch, dataloader, loss_values, device) -> None:
@@ -115,7 +113,7 @@ class XcepTrainer:
 
             input = image.to(device)
             label = label.to(device)
-            output = self.enet_model( input )
+            output = self.model( input )
             loss = self.criterion( output, label )
 
             self.opt.zero_grad()
@@ -168,6 +166,7 @@ class XcepTrainer:
             )
             self.json_file[epoch + 1][name] = self.loss_values[epoch][name]
 
+
 def train(config: ConfigParser):
-    trainer = XcepTrainer(config)
+    trainer = ENETTrainer(config)
     trainer.train()
