@@ -1,0 +1,6 @@
+[submodule "benchmark/benchmark/convNet.pytorch"]
+	path = benchmark/benchmark/convNet.pytorch
+	url = https://github.com/eladhoffer/convNet.pytorch.git
+[submodule "benchmark/convNet.pytorch"]
+	path = benchmark/convNet.pytorch
+	url = https://github.com/eladhoffer/convNet.pytorch.git
