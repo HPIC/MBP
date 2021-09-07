@@ -67,7 +67,7 @@ def test_cifar10_dataset():
 
     for idx, (data0, data1) in enumerate(dataloader):
         print(idx+1, data0.size(), data1.size())
-        if idx == 3:
+        if idx == 7:
             break
 
 if __name__ == '__main__':
