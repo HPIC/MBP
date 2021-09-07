@@ -112,7 +112,7 @@ class VGGTrainer:
         epoch_start = time.perf_counter()
         loss_values[epoch] = {"loss": 0.0}
         # pre_para = None
-        for idx, (ze, up, (image, label)) in enumerate(dataloader):
+        for idx, (image, label) in enumerate(dataloader):
             train_start = time.perf_counter()
 
             input = image.to(device)
@@ -120,9 +120,9 @@ class VGGTrainer:
             output = self.vgg_model( input )
             loss = self.criterion( output, label )
 
-            self.opt.zero_grad_accu(ze)
+            self.opt.zero_grad()
             loss.backward()
-            self.opt.step_accu(ze)
+            self.opt.step()
 
             train_end = time.perf_counter()
             train_time += train_end - train_start

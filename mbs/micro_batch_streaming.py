@@ -1,8 +1,9 @@
-import types
+from typing import List
 
 from mbs.types import ModelList
 from mbs.wrap_dataloader import MBSDataloader
 
+from torch.optim.optimizer import Optimizer
 
 class MicroBatchStreaming:
     """
@@ -12,13 +13,34 @@ class MicroBatchStreaming:
     def __init__(self) -> None:
         self.models: ModelList = []
 
-    def set_dataloader(self, dataloader, micro_batch_size):
-        return MBSDataloader(dataloader, micro_batch_size)
+        # for optimizer
+        self.zero_grad_timing = False
+        self.update_timing = False
+        self.optimizers : List[Optimizer] = []
+
+    def set_dataloader(self, dataloader, micro_batch_size=16):
+        self._dataloder = MBSDataloader(dataloader, micro_batch_size)
+        return self
 
     def set_optimizer(self, _optim):
-        _optim.step_accu = types.MethodType(step_accu, _optim)
-        _optim.zero_grad_accu = types.MethodType(zero_grad_accu, _optim)
-        return _optim
+        self.optimizers.append(_optim)
+        return self
+
+    def __iter__(self):
+        dataloader_gen = self._dataloder.__iter__()
+        for rtn_data in dataloader_gen:
+            (self.zero_grad_timing, self.update_timing, output) = rtn_data
+            yield output
+
+    def zero_grad(self):
+        if self.zero_grad_timing:
+            for optim in self.optimizers:
+                optim.zero_grad()
+
+    def step(self):
+        if self.update_timing:
+            for optim in self.optimizers:
+                optim.step()
 
 
 def step_accu(self, _update: bool = False):
