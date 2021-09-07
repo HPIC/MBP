@@ -6,7 +6,7 @@ from typing import List
 
 # Get dataset and model
 from dataloader import get_dataset
-from models.vgg.vgg import select_model
+from models.efficientnet.effinet import EfficientNetB0
 
 # PyTorch
 import torch
@@ -20,7 +20,7 @@ from util.util import ensure_dir, ensure_file_can_create, prepare_device
 from mbs.micro_batch_streaming import MicroBatchStreaming
 
 
-class VGGTrainer:
+class ENETTrainer:
     def __init__(self, config: ConfigParser) -> None:
         self.config = config
         self.json_file = {}
@@ -33,7 +33,7 @@ class VGGTrainer:
     @classmethod
     def _save_log(cls, log, is_mbs, batch_size) -> None:
         ensure_dir("./loss/")
-        with open(f"./loss/vgg_mbs_{is_mbs}_{batch_size}_loss_value.json", "w") as file:
+        with open(f"./loss/enet_mbs_{is_mbs}_{batch_size}_loss_value.json", "w") as file:
             json.dump(log, file, indent=4)
 
     @classmethod
@@ -59,9 +59,7 @@ class VGGTrainer:
 
     def _get_model_optimizer(self, device: torch.device, image_size: int) -> None:
         # Define Models
-        self.vgg_model = select_model(
-            self.config.data.model.normbatch,
-            self.config.data.model.version,
+        self.enet_model = EfficientNetB0(
             self.config.data.dataset.train.num_classes
         ).to(device)
 
@@ -70,7 +68,7 @@ class VGGTrainer:
 
         # Define optimizers
         self.opt = torch.optim.SGD( 
-            self.vgg_model.parameters(), 
+            self.enet_model.parameters(), 
             lr=self.config.data.optimizer.lr,
             weight_decay=self.config.data.optimizer.decay,
         )
@@ -97,8 +95,8 @@ class VGGTrainer:
         self._save_log(self.json_file, self.config.data.microbatchstream.enable, self.config.data.dataset.train.batch_size)
 
         self._save_state_dict(
-            self.vgg_model.state_dict(),
-            f"./parameters/{self.config.data.dataset.train.type}_mbs_{self.config.data.microbatchstream.enable}/vgg.pth"
+            self.enet_model.state_dict(),
+            f"./parameters/{self.config.data.dataset.train.type}_mbs_{self.config.data.microbatchstream.enable}/model.pth"
         )
 
     def _train_epoch(self, epoch, dataloader, loss_values, device) -> None:
@@ -117,16 +115,16 @@ class VGGTrainer:
 
             input = image.to(device)
             label = label.to(device)
-            output = self.vgg_model( input )
+            output = self.enet_model( input )
             loss = self.criterion( output, label )
 
             self.opt.zero_grad_accu(ze)
             loss.backward()
-            self.opt.step_accu(ze)
+            self.opt.step_accu(up)
 
             train_end = time.perf_counter()
             train_time += train_end - train_start
-            train_iter += 1
+            train_iter += 1 if up else 0
             loss_values[epoch]["loss"] += loss.detach().item()
         epoch_end = time.perf_counter()
         epoch_time += epoch_end - epoch_start
@@ -170,7 +168,6 @@ class VGGTrainer:
             )
             self.json_file[epoch + 1][name] = self.loss_values[epoch][name]
 
-
 def train(config: ConfigParser):
-    trainer = VGGTrainer(config)
+    trainer = ENETTrainer(config)
     trainer.train()
