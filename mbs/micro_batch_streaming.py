@@ -73,12 +73,10 @@ class MicroBatchStreaming(DataLoader, Optimizer):
 
     def zero_grad(self):
         if self.zero_grad_timing:
-            print('zero gradients')
             for optim in self.optimizers:
                 optim.zero_grad()
 
     def step(self):
         if self.update_timing:
-            print('update')
             for optim in self.optimizers:
                 optim.step()
