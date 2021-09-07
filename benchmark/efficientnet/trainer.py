@@ -1,12 +1,12 @@
 import itertools
 
-# import json
+import json
 import time
 from typing import List
 
 # Get dataset and model
 from dataloader import get_dataset
-from models.vgg.vgg import select_model
+from models.efficientnet.effinet import EfficientNetB0
 
 # PyTorch
 import torch
@@ -23,6 +23,7 @@ from mbs.micro_batch_streaming import MicroBatchStreaming
 class ENETTrainer:
     def __init__(self, config: ConfigParser) -> None:
         self.config = config
+        self.json_file = {}
 
     @classmethod
     def _save_state_dict(cls, state_dict: dict, path: str) -> None:
@@ -30,10 +31,10 @@ class ENETTrainer:
         torch.save(state_dict, path)
 
     @classmethod
-    def _save_log(cls, log, batch_size) -> None:
+    def _save_log(cls, log, is_mbs, batch_size) -> None:
         ensure_dir("./loss/")
-        # with open(f"./loss/cyclegan_mbs_{batch_size}_loss_value.json", "w") as file:
-        #     json_file = {}
+        with open(f"./loss/enet_mbs_{is_mbs}_{batch_size}_loss_value.json", "w") as file:
+            json.dump(log, file, indent=4)
 
     @classmethod
     def _get_data_loader(cls, dataset_config: DotDict) -> DataLoader:
@@ -58,9 +59,8 @@ class ENETTrainer:
 
     def _get_model_optimizer(self, device: torch.device, image_size: int) -> None:
         # Define Models
-        self.vgg_model = select_model(
-            self.config.data.model.normbatch,
-            self.config.data.model.version
+        self.enet_model = EfficientNetB0(
+            self.config.data.dataset.train.num_classes
         ).to(device)
 
         # Define loss function.
@@ -68,7 +68,7 @@ class ENETTrainer:
 
         # Define optimizers
         self.opt = torch.optim.SGD( 
-            self.vgg_model.parameters(), 
+            self.enet_model.parameters(), 
             lr=self.config.data.optimizer.lr,
             weight_decay=self.config.data.optimizer.decay,
         )
@@ -92,8 +92,55 @@ class ENETTrainer:
         for epoch in range(self.config.data.train.epoch):
             self._train_epoch(epoch, dataloader, self.loss_values, device)
 
+        self._save_log(self.json_file, self.config.data.microbatchstream.enable, self.config.data.dataset.train.batch_size)
+
         self._save_state_dict(
-            self.G_A.state_dict(), "./parameters/cyclegan_mbs/G_A.pth"
+            self.enet_model.state_dict(),
+            f"./parameters/{self.config.data.dataset.train.type}_mbs_{self.config.data.microbatchstream.enable}/model.pth"
+        )
+
+    def _train_epoch(self, epoch, dataloader, loss_values, device) -> None:
+
+        # Define check performance vars
+        epoch_time = 0
+        epoch_iter = 0
+        train_time = 0
+        train_iter = 0
+
+        epoch_start = time.perf_counter()
+        loss_values[epoch] = {"loss": 0.0}
+        # pre_para = None
+        for idx, (ze, up, (image, label)) in enumerate(dataloader):
+            train_start = time.perf_counter()
+
+            input = image.to(device)
+            label = label.to(device)
+            output = self.enet_model( input )
+            loss = self.criterion( output, label )
+
+            self.opt.zero_grad_accu(ze)
+            loss.backward()
+            self.opt.step_accu(up)
+
+            train_end = time.perf_counter()
+            train_time += train_end - train_start
+            train_iter += 1 if up else 0
+            loss_values[epoch]["loss"] += loss.detach().item()
+        epoch_end = time.perf_counter()
+        epoch_time += epoch_end - epoch_start
+        epoch_iter += 1
+
+        loss_values[epoch]["loss"] /= idx
+        if epoch == 0:
+            self.init_loss_value = loss_values[epoch]["loss"]
+
+        self._epoch_writer(
+            epoch,
+            self.config.data.train.epoch,
+            train_time,
+            train_iter,
+            epoch_time,
+            epoch_iter
         )
 
     def _epoch_writer(
@@ -113,50 +160,13 @@ class ENETTrainer:
             format(epoch_time / epoch_iter, ".3f") + "s",
             end=" ",
         )
-        # json_file[epoch + 1] = {}
+        self.json_file[epoch + 1] = {}
         for _, name in enumerate(self.loss_values[epoch]):
             print(
                 f"{name} :",
-                format(self.loss_values[epoch][name], ".2f"),
-                end=" ",
+                format(self.loss_values[epoch][name], ".2f")
             )
-        #     json_file[epoch + 1][name] = loss_values[epoch][name]
-        # print()
-        # json.dump(json_file, file, indent=4)
-
-    def _train_epoch(self, epoch, dataloader, loss_values, device) -> None:
-
-        # Define check performance vars
-        epoch_time = 0
-        epoch_iter = 0
-        train_time = 0
-        train_iter = 0
-
-        epoch_start = time.perf_counter()
-        loss_values[epoch] = {"loss": 0.0}
-        # pre_para = None
-        for idx, (ze, up, (image, label)) in enumerate(dataloader):
-            train_start = time.perf_counter()
-
-            input = image.to(device)
-            label = label.to(device)
-            output = self.vgg_model( input )
-            loss = self.criterion( output, label )
-
-            self.opt.zero_grad_accu(ze)
-            loss.backward()
-            self.opt.step_accu(up)
-
-            train_end = time.perf_counter()
-            train_time += train_end - train_start
-            train_iter += 1 if up else 0
-            loss_values[epoch]["loss"] += loss.detach().item()
-        epoch_end = time.perf_counter()
-        epoch_time += epoch_end - epoch_start
-        epoch_iter += 1
-
-        loss_values[epoch]["loss"] /= idx
-
+            self.json_file[epoch + 1][name] = self.loss_values[epoch][name]
 
 def train(config: ConfigParser):
     trainer = ENETTrainer(config)
