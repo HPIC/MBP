@@ -99,8 +99,7 @@ def rtn_cifar100(path, batch_size, image_size=32):
         cifar10_datasets,
         batch_size=batch_size,
         shuffle=True,
-        pin_memory=True,
-        num_workers=2
+        pin_memory=True
     )
     return dataloader
 
