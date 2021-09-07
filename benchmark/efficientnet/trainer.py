@@ -20,7 +20,7 @@ from util.util import ensure_dir, ensure_file_can_create, prepare_device
 from mbs.micro_batch_streaming import MicroBatchStreaming
 
 
-class VGGTrainer:
+class ENETTrainer:
     def __init__(self, config: ConfigParser) -> None:
         self.config = config
 
@@ -38,9 +38,10 @@ class VGGTrainer:
     @classmethod
     def _get_data_loader(cls, dataset_config: DotDict) -> DataLoader:
         dataloader = get_dataset(
-            path=dataset_config.path,
+            path=dataset_config.path + dataset_config.type,
+            dataset_type=dataset_config.type,
+            batch_size=dataset_config.batch_size,
             image_size=dataset_config.image_size,
-            batch_size=dataset_config.batch_size
         )
         return dataloader
 
@@ -158,5 +159,5 @@ class VGGTrainer:
 
 
 def train(config: ConfigParser):
-    trainer = VGGTrainer(config)
+    trainer = ENETTrainer(config)
     trainer.train()
