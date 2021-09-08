@@ -60,15 +60,9 @@ def test_cifar10_dataset():
     )
 
     dataloader = mbs.set_dataloader(dataloader, micro_batch_size=16)
-    # for idx, (_, up, (data0, data1)) in enumerate(dataloader):
-    #     print(idx+1, data0.size(), data1.size())
-    #     if up:
-    #         break
 
     for idx, (data0, data1) in enumerate(dataloader):
         print(idx+1, data0.size(), data1.size())
-        if idx == 7:
-            break
 
 if __name__ == '__main__':
     # test_cyclegan_dataset()

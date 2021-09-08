@@ -57,11 +57,16 @@ if __name__ ==  '__main__':
         pin_memory=True
     )
 
+    print(len(cifar10_datasets))
+    print(len(dataloader))
+
     dataloader = mbs.set_dataloader(dataloader, micro_batch_size=16)
     model = Net()
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     optimizer = mbs.set_optimizer(optimizer)
+
+    print(len(dataloader))
 
     for idx, (image, label) in enumerate(dataloader):
         optimizer.zero_grad()
@@ -70,5 +75,9 @@ if __name__ ==  '__main__':
         loss.backward()
         optimizer.step()
 
-        print(idx)
+        if idx == 0:
+            print(idx + 1, loss.detach(), image.size())
+        else:
+            print(idx + 1, loss.detach(), image.size(), end='\r')
+    print(idx + 1, loss.detach(), image.size())
 
