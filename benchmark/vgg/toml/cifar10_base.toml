@@ -38,5 +38,5 @@ epoch = 300
 
 # Micro Batch Streaming
 [microbatchstream]
-enable = true
-micro_batch_size = 64
+enable = false
+micro_batch_size = 512
