@@ -3,13 +3,13 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torchvision.transforms.transforms import CenterCrop, Resize
 
-def get_dataset(path, dataset_type, batch_size, image_size):
+def get_dataset(path, dataset_type, batch_size, image_size, is_train):
     if dataset_type == 'imagenet2012':
         return rtn_imagenet( path, batch_size, image_size )
     elif dataset_type == 'cifar10':
-        return rtn_cifar10( path, batch_size, image_size )
+        return rtn_cifar10( path, batch_size, image_size, is_train )
     elif dataset_type == 'cifar100':
-        return rtn_cifar100( path, batch_size, image_size )
+        return rtn_cifar100( path, batch_size, image_size, is_train )
 
 def rtn_imagenet( path, batch_size, image_size):
     post_transforms = transforms.Compose([
@@ -50,14 +50,13 @@ def rtn_imagenet( path, batch_size, image_size):
     return imagenet_dataloader
 
 
-def rtn_cifar10(path, batch_size, image_size=32):
+def rtn_cifar10(path, batch_size, image_size=None, is_train=True):
     normalize = transforms.Normalize(
         mean=[0.485, 0.456, 0.406],
         std=[0.229, 0.224, 0.225]
     )
-    cifar10_datasets = datasets.CIFAR10(
-            root=path,
-            train=True,
+
+    dataset = datasets.CIFAR10( root=path, train=is_train,
             transform=transforms.Compose(
                 [
                     # transforms.Resize((image_size, image_size)),
@@ -68,26 +67,37 @@ def rtn_cifar10(path, batch_size, image_size=32):
                 ]
             )
     )
-    dataloader = DataLoader(
-        cifar10_datasets,
-        batch_size=batch_size,
-        shuffle=True,
-        pin_memory=True,
-    )
-    return dataloader
+    dataloader = DataLoader( dataset, batch_size=batch_size, shuffle=True, pin_memory=True )
+
+    if is_train:
+        val_dataset = datasets.CIFAR10( root=path, train=False,
+                transform=transforms.Compose(
+                    [
+                        # transforms.Resize((image_size, image_size)),
+                        transforms.RandomHorizontalFlip(),
+                        transforms.RandomCrop(32, 4),
+                        transforms.ToTensor(),
+                        normalize
+                    ]
+                )
+        )
+        val_dataloader = DataLoader( val_dataset, batch_size=batch_size, shuffle=True, pin_memory=True )
+    else:
+        val_dataloader = None
+
+    return dataloader, val_dataloader
 
 
-def rtn_cifar100(path, batch_size, image_size=32):
+def rtn_cifar100(path, batch_size, image_size=None, is_train=True):
     normalize = transforms.Normalize(
         mean=[0.485, 0.456, 0.406],
         std=[0.229, 0.224, 0.225]
     )
-    cifar10_datasets = datasets.CIFAR100(
-            root=path,
-            train=True,
+
+    dataset = datasets.CIFAR100( root=path, train=is_train,
             transform=transforms.Compose(
                 [
-                    transforms.Resize((image_size, image_size)),
+                    # transforms.Resize((image_size, image_size)),
                     transforms.RandomHorizontalFlip(),
                     transforms.RandomCrop(32, 4),
                     transforms.ToTensor(),
@@ -95,13 +105,25 @@ def rtn_cifar100(path, batch_size, image_size=32):
                 ]
             )
     )
-    dataloader = DataLoader(
-        cifar10_datasets,
-        batch_size=batch_size,
-        shuffle=True,
-        pin_memory=True
-    )
-    return dataloader
+    dataloader = DataLoader( dataset, batch_size=batch_size, shuffle=True, pin_memory=True )
+
+    if is_train:
+        val_dataset = datasets.CIFAR100( root=path, train=False,
+                transform=transforms.Compose(
+                    [
+                        # transforms.Resize((image_size, image_size)),
+                        transforms.RandomHorizontalFlip(),
+                        transforms.RandomCrop(32, 4),
+                        transforms.ToTensor(),
+                        normalize
+                    ]
+                )
+        )
+        val_dataloader = DataLoader( val_dataset, batch_size=batch_size, shuffle=True, pin_memory=True )
+    else:
+        val_dataloader = None
+
+    return dataloader, val_dataloader
 
 
 if __name__=='__main__':

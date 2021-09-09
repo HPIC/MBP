@@ -690,3 +690,4 @@ benchmark/test.py
 # 
 examples/MNIST
 *.csv
+benchmark/pytorch-cifar100/runs

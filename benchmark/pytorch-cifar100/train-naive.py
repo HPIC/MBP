@@ -135,7 +135,8 @@ if __name__ == '__main__':
         settings.CIFAR100_TRAIN_STD,
         num_workers=4,
         batch_size=args.b,
-        shuffle=True
+        shuffle=True,
+        pin_memory=True
     )
 
     cifar100_test_loader = get_test_dataloader(
@@ -143,7 +144,8 @@ if __name__ == '__main__':
         settings.CIFAR100_TRAIN_STD,
         num_workers=4,
         batch_size=args.b,
-        shuffle=True
+        shuffle=True,
+        pin_memory=True
     )
 
     loss_function = nn.CrossEntropyLoss()

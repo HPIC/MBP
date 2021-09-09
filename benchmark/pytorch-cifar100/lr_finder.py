@@ -3,6 +3,7 @@ import argparse
 import glob
 import os
 
+from typing import List
 import cv2
 import torch
 import torch.nn as nn
@@ -20,6 +21,18 @@ import matplotlib.pyplot as plt
 
 
 from torch.optim.lr_scheduler import _LRScheduler
+
+from mbs.micro_batch_streaming import MicroBatchStreaming
+
+def _init_microbatch_stream(
+    train_dataloader: DataLoader, optim_list: List[optim.Optimizer], micro_batch_size: int
+) -> List[optim.Optimizer]:
+    # Define MicroBatchStreaming
+    mbs = MicroBatchStreaming()
+    train_dataloader = mbs.set_dataloader(train_dataloader, micro_batch_size)
+    for optim in optim_list:
+        optim = mbs.set_optimizer(optim)
+    return train_dataloader, optim_list
 
 
 class FindLR(_LRScheduler):
@@ -44,6 +57,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-net', type=str, required=True, help='net type')
     parser.add_argument('-b', type=int, default=64, help='batch size for dataloader')
+    parser.add_argument('-mb', type=int, default=64, help='micro batch size for dataloader')
     parser.add_argument('-base_lr', type=float, default=1e-7, help='min learning rate')
     parser.add_argument('-max_lr', type=float, default=10, help='max learning rate')
     parser.add_argument('-num_iter', type=int, default=100, help='num of iteration')
@@ -59,10 +73,11 @@ if __name__ == '__main__':
     )
 
     net = get_network(args)
-
+    micro_batch_size = args.mb
     loss_function = nn.CrossEntropyLoss()
     optimizer = optim.SGD(net.parameters(), lr=args.base_lr, momentum=0.9, weight_decay=1e-4, nesterov=True)
-
+    optim_list = [optimizer]
+    cifar100_training_loader = _init_microbatch_stream(cifar100_training_loader, optim_list, micro_batch_size)
     #set up warmup phase learning rate scheduler
     lr_scheduler = FindLR(optimizer, max_lr=args.max_lr, num_iter=args.num_iter)
     epoches = int(args.num_iter / len(cifar100_training_loader)) + 1
