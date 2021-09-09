@@ -1,13 +1,8 @@
-title = "VGG"
-
-# Select model version (16, 19)
-[model]
-normbatch = false
-version = 16
+title = "EfficientNet"
 
 # Setting Optimizer
 [optimizer]
-lr = 0.05
+lr = 0.1
 mometum = 0.9
 decay = 0.0005
 
@@ -17,7 +12,7 @@ device = 0
 
 # Train Related Configurations
 [train]
-epoch = 300
+epoch = 100
 
 # Dataset Related Configurations
 [dataset]
@@ -39,4 +34,4 @@ epoch = 300
 # Micro Batch Streaming
 [microbatchstream]
 enable = true
-micro_batch_size = 512
+micro_batch_size = 4
