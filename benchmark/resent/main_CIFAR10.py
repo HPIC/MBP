@@ -11,8 +11,10 @@ from torch.optim import SGD
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 import torchvision
+from torchvision import transforms
+from torchvision.transforms.transforms import RandomChoice, RandomCrop, ToTensor
 
-from resnet import resnet50
+from resnet import resnet101
 from torchgpipe import GPipe
 import csv
 
@@ -112,7 +114,7 @@ EXPERIMENTS: Dict[str, Experiment] = {
 }
 
 
-def dataloaders(batch_size: int, num_workers: int = 20) -> Tuple[DataLoader, DataLoader]:
+def dataloaders(batch_size: int, num_workers: int = 4) -> Tuple[DataLoader, DataLoader]:
     num_workers = num_workers if batch_size <= 4096 else num_workers // 2
 
     post_transforms = torchvision.transforms.Compose([
@@ -120,21 +122,22 @@ def dataloaders(batch_size: int, num_workers: int = 20) -> Tuple[DataLoader, Dat
         torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
     ])
 
-    train_dataset = torchvision.datasets.ImageNet(
-        root='imagenet',
-        split='train',
+    train_dataset = torchvision.datasets.CIFAR10(
+        root='cifar10',
+        train=True,
         transform=torchvision.transforms.Compose([
-            torchvision.transforms.RandomResizedCrop(224, scale=(0.08, 1.0)),
+            torchvision.transforms.Resize((32, 32)),
             torchvision.transforms.RandomHorizontalFlip(),
+            torchvision.transforms.RandomCrop(32,4),
             post_transforms,
         ])
     )
-    test_dataset = torchvision.datasets.ImageNet(
-        root='imagenet',
-        split='val',
+    test_dataset = torchvision.datasets.CIFAR10(
+        root='cifar10',
+        train=False,
         transform=torchvision.transforms.Compose([
-            torchvision.transforms.Resize(256),
-            torchvision.transforms.CenterCrop(224),
+            torchvision.transforms.Resize(32),
+            torchvision.transforms.CenterCrop(32),
             post_transforms,
         ])
     )
@@ -229,7 +232,7 @@ def cli(ctx: click.Context,
         ctx.fail('--skip-epochs=%d must be less than --epochs=%d' % (skip_epochs, epochs))
 
     relu_inplace = 'gpipe' not in experiment
-    model: nn.Module = resnet50(num_classes=1000, inplace=relu_inplace)
+    model: nn.Module = resnet101(num_classes=10, inplace=relu_inplace)
 
     f = EXPERIMENTS[experiment]
     try:
@@ -284,6 +287,10 @@ def cli(ctx: click.Context,
 
     global BASE_TIME
     BASE_TIME = time.time()
+    file_name ="naive_cifar10"+str(BASE_TIME)+".csv"
+    f = open(file_name, 'w', newline='')
+    wr = csv.writer(f)
+    wr.writerow(['epoch' , 'epochs', 'train_throughput', 'train_loss', 'valid_loss', 'valid_accuracy'])
 
     def evaluate(dataloader: DataLoader) -> Tuple[float, float]:
         tick = time.time()
@@ -305,7 +312,7 @@ def cli(ctx: click.Context,
                 loss_sum += loss * current_batch
 
                 _, predicted = torch.max(output, 1)
-                correct = (predicted == target).sum()
+                correct = (predicted == target).sum().item()
                 accuracy_sum += correct
 
                 percent = i / steps * 100
@@ -357,6 +364,7 @@ def cli(ctx: click.Context,
 
         elapsed_time = tock - tick
         throughput = data_trained / elapsed_time
+        wr.writerow([epoch, epochs, throughput, train_loss, valid_loss, valid_accuracy])
         log('%d/%d epoch | lr:%.5f | train loss:%.3f %.3f samples/sec | '
             'valid loss:%.3f accuracy:%.3f'
             '' % (epoch+1, epochs, scheduler.get_lr()[0], train_loss, throughput,
@@ -389,7 +397,7 @@ def cli(ctx: click.Context,
     elapsed_time = sum(elapsed_times) / n if n > 0 else 0.0
     click.echo('%s | valid accuracy: %.4f | %.3f samples/sec, %.3f sec/epoch (average)'
                '' % (title, valid_accuracy, throughput, elapsed_time))
-
+    f.close()
 
 if __name__ == '__main__':
     cli()

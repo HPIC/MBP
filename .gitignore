@@ -689,3 +689,4 @@ benchmark/test.py
 
 # 
 examples/MNIST
+*.csv

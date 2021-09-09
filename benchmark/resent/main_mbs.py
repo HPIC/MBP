@@ -18,7 +18,7 @@ from torchgpipe import GPipe
 
 # Get Micro-batch streaming.
 from mbs.micro_batch_streaming import MicroBatchStreaming
-import json
+import csv
 
 Stuffs = Tuple[nn.Module, int, List[torch.device]]  # (model, batch_size, devices)
 Experiment = Callable[[nn.Module, List[int]], Stuffs]
@@ -116,9 +116,9 @@ EXPERIMENTS: Dict[str, Experiment] = {
 }
 
 
-def dataloaders(batch_size: int, num_workers: int = 32) -> Tuple[DataLoader, DataLoader]:
-    num_workers = num_workers if batch_size <= 4096 else num_workers // 2
-
+def dataloaders(batch_size: int, num_workers: int = 20) -> Tuple[DataLoader, DataLoader]:
+    #num_workers = num_workers if batch_size <= 4096 else num_workers // 2
+    num_workers = 20
     post_transforms = torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
@@ -260,17 +260,17 @@ def cli(ctx: click.Context,
 
     # Prepare dataloaders.
     train_dataloader, valid_dataloader = dataloaders(batch_size)
-    micro_batch_size = 32
+    micro_batch_size = 64
 
     # Optimizer with LR scheduler
-    steps_train = len(train_dataloader)
-    steps_valid = len(valid_dataloader)
     lr_multiplier = max(1.0, batch_size / 256)
     optimizer = SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4, nesterov=True)
 
     optim_list = [optimizer]
 
     train_dataloader, valid_dataloader, optim_list = _init_microbatch_stream(train_dataloader, valid_dataloader, optim_list, micro_batch_size)
+    steps_train = train_dataloader.length*(batch_size/micro_batch_size)
+    steps_valid = valid_dataloader.length*(batch_size/micro_batch_size)
 
     def gradual_warmup_linear_scaling(step: int) -> float:
         epoch = step / steps_train
@@ -309,6 +309,9 @@ def cli(ctx: click.Context,
 
     global BASE_TIME
     BASE_TIME = time.time()
+    f = open('log.csv', 'w', newline='')
+    wr = csv.writer(f)
+    wr.writerow(['epoch' , 'epochs', 'train_throughput', 'train_loss', 'valid_loss', 'valid_accuracy'])
 
     def evaluate(dataloader: DataLoader, steps) -> Tuple[float, float]:
         tick = time.time()
@@ -353,11 +356,12 @@ def cli(ctx: click.Context,
             data_trained += micro_batch_size
             input = input.to(device=in_device, non_blocking=True)
             target = target.to(device=out_device, non_blocking=True)
-            optimizer.zero_grad()
             output = model(input)
             loss = F.cross_entropy(output, target)
 
+            optimizer.zero_grad()
             loss.backward()
+            
             optimizer.step()
             scheduler.step()
 
@@ -378,6 +382,7 @@ def cli(ctx: click.Context,
 
         elapsed_time = tock - tick
         throughput = data_trained / elapsed_time
+        wr.writerow([epoch, epochs, throughput, train_loss, valid_loss, valid_accuracy])
         log('%d/%d epoch | lr:%.5f | train loss:%.3f %.3f samples/sec | '
             'valid loss:%.3f accuracy:%.3f'
             '' % (epoch+1, epochs, scheduler.get_lr()[0], train_loss, throughput,
@@ -412,6 +417,7 @@ def cli(ctx: click.Context,
     elapsed_time = sum(elapsed_times) / n if n > 0 else 0.0
     click.echo('%s | valid accuracy: %.4f | %.3f samples/sec, %.3f sec/epoch (average)'
                '' % (title, valid_accuracy, throughput, elapsed_time))
+    f.close()
 
 
 if __name__ == '__main__':

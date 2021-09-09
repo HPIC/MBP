@@ -9,10 +9,10 @@ class MBSDataloader(DataLoader):
         target_dataloader : DataLoader,
         micro_batch_size : int = None
     ) -> None:
-        self.dataloader = target_dataloader # Get iterator from dataloader by user.
-        self.mini_batch_size = target_dataloader.batch_size # Get batch size from dataloader by user.
+        self.dataloader = target_dataloader
+        self.dataset = target_dataloader.dataset
+        self.mini_batch_size = target_dataloader.batch_size
 
-        # setting micro batch size
         if micro_batch_size == None:
             self.micro_batch_size = self.mini_batch_size
         else:
@@ -37,11 +37,20 @@ class MBSDataloader(DataLoader):
         for data in self.dataloader:
             micro_dataset, num_micro_batch = self.chunk_dataset(data)
             for midx in range(num_micro_batch):
-                zero = midx == 0
-                update = (midx + 1) == num_micro_batch
+                zero_grad_timing = midx == 0
+                update_timing = (midx + 1) == num_micro_batch
                 rtn_data = [ micro_dataset[cidx][midx] for cidx, _ in enumerate(micro_dataset) ]
-                yield (zero, update, rtn_data)
+                yield (zero_grad_timing, update_timing, rtn_data)
 
+    def __len__(self):
+        return len(self.dataloader)
+
+    def micro_len(self):
+        total_num_dataset = len(self.dataset)
+        std_micro_len = ( total_num_dataset // self.micro_batch_size ) + \
+            math.ceil( (total_num_dataset % self.micro_batch_size) / self.micro_batch_size )
+
+        return std_micro_len
 
 def no_tensor_chunk(dataset, num_chunk):
     temp = []

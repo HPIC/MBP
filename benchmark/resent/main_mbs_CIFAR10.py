@@ -8,12 +8,16 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.optim import SGD
+from torch.optim.optimizer import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 import torchvision
 
-from resnet import resnet50
+from resnet import resnet101
 from torchgpipe import GPipe
+
+# Get Micro-batch streaming.
+from mbs.micro_batch_streaming import MicroBatchStreaming
 import csv
 
 Stuffs = Tuple[nn.Module, int, List[torch.device]]  # (model, batch_size, devices)
@@ -25,7 +29,7 @@ class Experiments:
     @staticmethod
     def naive64(model: nn.Module, devices: List[int]) -> Stuffs:
         batch_size = 64
-        device = devices[-1]
+        device = devices[0]
         model.to(device)
         return model, batch_size, [torch.device(device)]
 
@@ -40,7 +44,7 @@ class Experiments:
     def dataparallel128(model: nn.Module, devices: List[int]) -> Stuffs:
         batch_size = 64
 
-        devices = [devices[1], devices[3]]
+        devices = [devices[0], devices[2]]
         model.to(devices[0])
         model = nn.DataParallel(model, device_ids=devices, output_device=devices[-1])
 
@@ -112,7 +116,7 @@ EXPERIMENTS: Dict[str, Experiment] = {
 }
 
 
-def dataloaders(batch_size: int, num_workers: int = 20) -> Tuple[DataLoader, DataLoader]:
+def dataloaders(batch_size: int, num_workers: int = 4) -> Tuple[DataLoader, DataLoader]:
     num_workers = num_workers if batch_size <= 4096 else num_workers // 2
 
     post_transforms = torchvision.transforms.Compose([
@@ -120,21 +124,22 @@ def dataloaders(batch_size: int, num_workers: int = 20) -> Tuple[DataLoader, Dat
         torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
     ])
 
-    train_dataset = torchvision.datasets.ImageNet(
-        root='imagenet',
-        split='train',
+    train_dataset = torchvision.datasets.CIFAR10(
+        root='cifar10',
+        train=True,
         transform=torchvision.transforms.Compose([
-            torchvision.transforms.RandomResizedCrop(224, scale=(0.08, 1.0)),
+            torchvision.transforms.Resize((32, 32)),
             torchvision.transforms.RandomHorizontalFlip(),
+            torchvision.transforms.RandomCrop(32,4),
             post_transforms,
         ])
     )
-    test_dataset = torchvision.datasets.ImageNet(
-        root='imagenet',
-        split='val',
+    test_dataset = torchvision.datasets.CIFAR10(
+        root='cifar10',
+        train=False,
         transform=torchvision.transforms.Compose([
-            torchvision.transforms.Resize(256),
-            torchvision.transforms.CenterCrop(224),
+            torchvision.transforms.Resize(32),
+            torchvision.transforms.CenterCrop(32),
             post_transforms,
         ])
     )
@@ -194,6 +199,19 @@ def parse_devices(ctx: Any, param: Any, value: Optional[str]) -> List[int]:
     return [int(x) for x in value.split(',')]
 
 
+#@staticmethod
+def _init_microbatch_stream(
+    train_dataloader: DataLoader, valid_dataloader: DataLoader, optim_list: List[Optimizer], micro_batch_size: int
+) -> List[Optimizer]:
+    # Define MicroBatchStreaming
+    mbs = MicroBatchStreaming()
+    train_dataloader = mbs.set_dataloader(train_dataloader, micro_batch_size)
+    valid_dataloader = mbs.set_dataloader(valid_dataloader, micro_batch_size)
+    for optim in optim_list:
+        optim = mbs.set_optimizer(optim)
+    return train_dataloader, valid_dataloader, optim_list
+
+
 @click.command()
 @click.pass_context
 @click.argument(
@@ -218,6 +236,8 @@ def parse_devices(ctx: Any, param: Any, value: Optional[str]) -> List[int]:
     callback=parse_devices,
     help='Device IDs to use (default: all CUDA devices)',
 )
+
+
 def cli(ctx: click.Context,
         experiment: str,
         epochs: int,
@@ -229,7 +249,7 @@ def cli(ctx: click.Context,
         ctx.fail('--skip-epochs=%d must be less than --epochs=%d' % (skip_epochs, epochs))
 
     relu_inplace = 'gpipe' not in experiment
-    model: nn.Module = resnet50(num_classes=1000, inplace=relu_inplace)
+    model: nn.Module = resnet101(num_classes=10, inplace=relu_inplace)
 
     f = EXPERIMENTS[experiment]
     try:
@@ -241,14 +261,20 @@ def cli(ctx: click.Context,
 
     # Prepare dataloaders.
     train_dataloader, valid_dataloader = dataloaders(batch_size)
+    micro_batch_size = 128
 
     # Optimizer with LR scheduler
-    steps = len(train_dataloader)
     lr_multiplier = max(1.0, batch_size / 256)
     optimizer = SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4, nesterov=True)
 
+    optim_list = [optimizer]
+
+    train_dataloader, valid_dataloader, optim_list = _init_microbatch_stream(train_dataloader, valid_dataloader, optim_list, micro_batch_size)
+    steps_train = len(valid_dataloader)*(batch_size/micro_batch_size)
+    steps_valid = len(valid_dataloader)*(batch_size/micro_batch_size)
+
     def gradual_warmup_linear_scaling(step: int) -> float:
-        epoch = step / steps
+        epoch = step / steps_train
 
         # Gradual warmup
         warmup_ratio = min(4.0, epoch) / 4.0
@@ -284,10 +310,13 @@ def cli(ctx: click.Context,
 
     global BASE_TIME
     BASE_TIME = time.time()
+    file_name ="mbs_cifar10"+str(BASE_TIME)+".csv"
+    f = open(file_name, 'w', newline='')
+    wr = csv.writer(f)
+    wr.writerow(['epoch' , 'epochs', 'train_throughput', 'train_loss', 'valid_loss', 'valid_accuracy'])
 
-    def evaluate(dataloader: DataLoader) -> Tuple[float, float]:
+    def evaluate(dataloader: DataLoader, steps) -> Tuple[float, float]:
         tick = time.time()
-        steps = len(dataloader)
         data_tested = 0
         loss_sum = torch.zeros(1, device=out_device)
         accuracy_sum = torch.zeros(1, device=out_device)
@@ -305,7 +334,7 @@ def cli(ctx: click.Context,
                 loss_sum += loss * current_batch
 
                 _, predicted = torch.max(output, 1)
-                correct = (predicted == target).sum()
+                correct = (predicted == target).sum().item()
                 accuracy_sum += correct
 
                 percent = i / steps * 100
@@ -318,16 +347,15 @@ def cli(ctx: click.Context,
 
         return loss.item(), accuracy.item()
 
-    def run_epoch(epoch: int) -> Tuple[float, float]:
+    def run_epoch(epoch: int, steps) -> Tuple[float, float]:
         torch.cuda.synchronize(in_device)
         tick = time.time()
 
-        steps = len(train_dataloader)
         data_trained = 0
         loss_sum = torch.zeros(1, device=out_device)
         model.train()
         for i, (input, target) in enumerate(train_dataloader):
-            data_trained += batch_size
+            data_trained += micro_batch_size
             input = input.to(device=in_device, non_blocking=True)
             target = target.to(device=out_device, non_blocking=True)
 
@@ -340,7 +368,7 @@ def cli(ctx: click.Context,
             optimizer.step()
             scheduler.step()
 
-            loss_sum += loss.detach() * batch_size
+            loss_sum += loss.detach() * micro_batch_size
 
             percent = i / steps * 100
             throughput = data_trained / (time.time()-tick)
@@ -352,11 +380,12 @@ def cli(ctx: click.Context,
         tock = time.time()
 
         train_loss = loss_sum.item() / data_trained
-        valid_loss, valid_accuracy = evaluate(valid_dataloader)
+        valid_loss, valid_accuracy = evaluate(valid_dataloader, steps_valid)
         torch.cuda.synchronize(in_device)
 
         elapsed_time = tock - tick
         throughput = data_trained / elapsed_time
+        wr.writerow([epoch, epochs, throughput, train_loss, valid_loss, valid_accuracy])
         log('%d/%d epoch | lr:%.5f | train loss:%.3f %.3f samples/sec | '
             'valid loss:%.3f accuracy:%.3f'
             '' % (epoch+1, epochs, scheduler.get_lr()[0], train_loss, throughput,
@@ -370,7 +399,7 @@ def cli(ctx: click.Context,
 
     hr()
     for epoch in range(epochs):
-        throughput, elapsed_time = run_epoch(epoch)
+        throughput, elapsed_time = run_epoch(epoch, steps_train)
 
         if epoch < skip_epochs:
             continue
@@ -378,7 +407,7 @@ def cli(ctx: click.Context,
         throughputs.append(throughput)
         elapsed_times.append(elapsed_time)
 
-    _, valid_accuracy = evaluate(valid_dataloader)
+    _, valid_accuracy = evaluate(valid_dataloader, steps_valid)
     hr()
 
     # RESULT ======================================================================================
@@ -389,6 +418,7 @@ def cli(ctx: click.Context,
     elapsed_time = sum(elapsed_times) / n if n > 0 else 0.0
     click.echo('%s | valid accuracy: %.4f | %.3f samples/sec, %.3f sec/epoch (average)'
                '' % (title, valid_accuracy, throughput, elapsed_time))
+    f.close()
 
 
 if __name__ == '__main__':

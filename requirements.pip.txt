@@ -11,4 +11,4 @@ torchvision==0.10.0
 typing-extensions==3.10.0.0
 torchgpipe
 click==7.0
-
+tensorboard
