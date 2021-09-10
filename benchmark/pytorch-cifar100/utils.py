@@ -16,7 +16,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 
 
-def get_network(args):
+def get_network(args, device):
     """ return given network
     """
 
@@ -158,7 +158,7 @@ def get_network(args):
         sys.exit()
 
     if args.gpu: #use_gpu
-        net = net.cuda()
+        net = net.cuda(device)
 
     return net
 

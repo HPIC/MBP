@@ -12,7 +12,7 @@ import sys
 import argparse
 import time
 from datetime import datetime
-from typing import List
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 import numpy as np
 import torch
@@ -49,8 +49,8 @@ def train(epoch):
     for batch_index, (images, labels) in enumerate(cifar100_training_loader):
 
         if args.gpu:
-            labels = labels.cuda()
-            images = images.cuda()
+            labels = labels.cuda(device)
+            images = images.cuda(device)
 
         optimizer.zero_grad()
         outputs = net(images)
@@ -102,8 +102,8 @@ def eval_training(epoch=0, tb=True):
     for (images, labels) in cifar100_test_loader:
 
         if args.gpu:
-            images = images.cuda()
-            labels = labels.cuda()
+            images = images.cuda(device)
+            labels = labels.cuda(device)
 
         outputs = net(images)
         loss = loss_function(outputs, labels)
@@ -115,7 +115,7 @@ def eval_training(epoch=0, tb=True):
     finish = time.time()
     if args.gpu:
         print('GPU INFO.....')
-        print(torch.cuda.memory_summary(), end='')
+        print(torch.cuda.memory_summary(device), end='')
     print('Evaluating Network.....')
     print('Test set: Epoch: {}, Average loss: {:.4f}, Accuracy: {:.4f}, Time consumed:{:.2f}s'.format(
         epoch,
@@ -137,6 +137,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-net', type=str, required=True, help='net type')
     parser.add_argument('-gpu', action='store_true', default=False, help='use gpu or not')
+    parser.add_argument('-gpu_device', type=int, default=0, help='select gpu device')
     parser.add_argument('-mbs', action='store_true', default=False, help='use mbs framework or not')
     parser.add_argument('-b', type=int, default=128, help='batch size for dataloader')
     parser.add_argument('-mb', type=int, default=64, help='micro batch size for dataloader')
@@ -145,8 +146,9 @@ if __name__ == '__main__':
     parser.add_argument('-resume', action='store_true', default=False, help='resume training')
     args = parser.parse_args()
 
-    net = get_network(args)
+    device = torch.device('cuda:1')
 
+    net = get_network(args, device)
     #data preprocessing:
     cifar100_training_loader = get_training_dataloader(
         settings.CIFAR100_TRAIN_MEAN,
@@ -202,7 +204,7 @@ if __name__ == '__main__':
             settings.LOG_DIR, args.net, settings.TIME_NOW))
     input_tensor = torch.Tensor(1, 3, 32, 32)
     if args.gpu:
-        input_tensor = input_tensor.cuda()
+        input_tensor = input_tensor.cuda(device)
     writer.add_graph(net, input_tensor)
 
     #create checkpoint folder to save model
