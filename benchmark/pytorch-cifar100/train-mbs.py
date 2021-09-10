@@ -146,7 +146,8 @@ if __name__ == '__main__':
     parser.add_argument('-resume', action='store_true', default=False, help='resume training')
     args = parser.parse_args()
 
-    device = torch.device('cuda:1')
+    _device = 'cuda:' + str(args.gpu_device)
+    device = torch.device(_device)
 
     net = get_network(args, device)
     #data preprocessing:
