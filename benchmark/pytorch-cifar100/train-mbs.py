@@ -31,16 +31,28 @@ from utils import get_network, get_training_dataloader, get_test_dataloader, War
 
 from mbs.micro_batch_streaming import MicroBatchStreaming
 
+# def _init_microbatch_stream(
+#     train_dataloader: DataLoader, valid_dataloader: DataLoader, optim_list: List[optim.Optimizer], micro_batch_size: int
+# ) -> List[optim.Optimizer]:
+#     # Define MicroBatchStreaming
+#     mbs = MicroBatchStreaming()
+#     train_dataloader = mbs.set_dataloader(train_dataloader, micro_batch_size)
+#     valid_dataloader = mbs.set_dataloader(valid_dataloader, micro_batch_size)
+#     for optim in optim_list:
+#         optim = mbs.set_optimizer(optim)
+#     return train_dataloader, valid_dataloader, optim_list
+
 def _init_microbatch_stream(
     train_dataloader: DataLoader, valid_dataloader: DataLoader, optim_list: List[optim.Optimizer], micro_batch_size: int
 ) -> List[optim.Optimizer]:
     # Define MicroBatchStreaming
     mbs = MicroBatchStreaming()
     train_dataloader = mbs.set_dataloader(train_dataloader, micro_batch_size)
-    valid_dataloader = mbs.set_dataloader(valid_dataloader, micro_batch_size)
+    valid_dataloader = valid_dataloader
     for optim in optim_list:
         optim = mbs.set_optimizer(optim)
     return train_dataloader, valid_dataloader, optim_list
+
 
 def train(epoch):
 
@@ -67,10 +79,11 @@ def train(epoch):
             if 'bias' in name:
                 writer.add_scalar('LastLayerGradients/grad_norm2_bias', para.grad.norm(), n_iter)
 
-        print('Training Epoch: {epoch} [{trained_samples}/{total_samples}]\tLoss: {:0.4f}\tLR: {:0.6f}'.format(
+        print('Training Epoch: {epoch} Batch Index: {batch_index} [{trained_samples}/{total_samples}]\tLoss: {:0.4f}\tLR: {:0.6f}'.format(
             loss.item(),
             optimizer.param_groups[0]['lr'],
             epoch=epoch,
+            batch_index = batch_index,
             trained_samples=batch_index * micro_batch_size + len(images),
             total_samples=cifar100_training_loader_dataset_size
         ))
@@ -181,8 +194,10 @@ if __name__ == '__main__':
     optim_list = [optimizer]
     cifar100_training_loader, cifar100_test_loader, optim_list = _init_microbatch_stream(cifar100_training_loader, cifar100_test_loader, optim_list, micro_batch_size)
 
+    print(len(cifar100_training_loader))
+
     train_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=settings.MILESTONES, gamma=0.2) #learning rate decay
-    iter_per_epoch = cifar100_test_loader_dataset_size/micro_batch_size
+    iter_per_epoch = cifar100_training_loader_dataset_size/micro_batch_size
     warmup_scheduler = WarmUpLR(optimizer, iter_per_epoch * args.warm)
 
     if args.resume:
