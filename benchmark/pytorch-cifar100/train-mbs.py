@@ -51,7 +51,7 @@ def _init_microbatch_stream(
     valid_dataloader = valid_dataloader
     for optim in optim_list:
         optim = mbs.set_optimizer(optim)
-    return train_dataloader, valid_dataloader, optim_list
+    return train_dataloader, valid_dataloader, optim_list[0]
 
 
 def train(epoch):
@@ -64,11 +64,11 @@ def train(epoch):
             labels = labels.cuda(device)
             images = images.cuda(device)
 
-        optimizer.zero_grad()
+        mbs_optimizer.zero_grad()
         outputs = net(images)
         loss = loss_function(outputs, labels)
         loss.backward()
-        optimizer.step()
+        mbs_optimizer.step()
 
         n_iter = (epoch - 1) * cifar100_training_loader.micro_len() + batch_index + 1
 
@@ -79,11 +79,10 @@ def train(epoch):
             if 'bias' in name:
                 writer.add_scalar('LastLayerGradients/grad_norm2_bias', para.grad.norm(), n_iter)
 
-        print('Training Epoch: {epoch} Batch Index: {batch_index} [{trained_samples}/{total_samples}]\tLoss: {:0.4f}\tLR: {:0.6f}'.format(
+        print('Training Epoch: {epoch} [{trained_samples}/{total_samples}]\tLoss: {:0.4f}\tLR: {:0.6f}'.format(
             loss.item(),
-            optimizer.param_groups[0]['lr'],
+            mbs_optimizer.param_groups[0]['lr'],
             epoch=epoch,
-            batch_index = batch_index,
             trained_samples=batch_index * micro_batch_size + len(images),
             total_samples=cifar100_training_loader_dataset_size
         ))
@@ -192,13 +191,13 @@ if __name__ == '__main__':
     #add mbs capability
     micro_batch_size = args.mb
     optim_list = [optimizer]
-    cifar100_training_loader, cifar100_test_loader, optim_list = _init_microbatch_stream(cifar100_training_loader, cifar100_test_loader, optim_list, micro_batch_size)
+    cifar100_training_loader, cifar100_test_loader, mbs_optimizer = _init_microbatch_stream(cifar100_training_loader, cifar100_test_loader, optim_list, micro_batch_size)
 
     print(len(cifar100_training_loader))
 
-    train_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=settings.MILESTONES, gamma=0.2) #learning rate decay
+    train_scheduler = optim.lr_scheduler.MultiStepLR(mbs_optimizer, milestones=settings.MILESTONES, gamma=0.2) #learning rate decay
     iter_per_epoch = cifar100_training_loader_dataset_size/micro_batch_size
-    warmup_scheduler = WarmUpLR(optimizer, iter_per_epoch * args.warm)
+    warmup_scheduler = WarmUpLR(mbs_optimizer, iter_per_epoch * args.warm)
 
     if args.resume:
         recent_folder = most_recent_folder(os.path.join(settings.CHECKPOINT_PATH, args.net), fmt=settings.DATE_FORMAT)
