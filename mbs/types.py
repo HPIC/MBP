@@ -1,24 +1,26 @@
 from typing import List, Tuple, Union
 
-import torch
+from torch.optim.optimizer import Optimizer
+from mbs.wrap_dataloader import MBSDataloader
+from mbs.wrap_optimizer import MBSOptimizer
 
 __all__ = [
-    "ModelType",
-    "ModelList",
-    "ModelTuple",
-    "DatasetType",
-    "DatasetList",
-    "OptimType",
+    "TorchSingleOptimizer",
+    "TorchMultiOptimizer",
+    "TorchOptimizer",
+    "MBSSingleOptimizer",
+    "MBSOptimizers",
+    "MBSDataloaders",
 ]
 
-# Model related custom types
-ModelType = Union[torch.nn.Module, torch.nn.Sequential]
-ModelList = List[ModelType]
-ModelTuple = Tuple[ModelType]
+# PyTorch Optimizer related custom types
+TorchSingleOptimizer = Optimizer
+TorchMultiOptimizer = List[ Optimizer ]
+TorchOptimizer = Union[ TorchSingleOptimizer, TorchMultiOptimizer ]
 
-# Dataset related custom types
-DatasetType = torch.Tensor
-DatasetList = Tuple[DatasetType]
+# MBS optimizer related custom types
+MBSSingleOptimizer = MBSOptimizer
+MBSOptimizers = List[ MBSOptimizer ]
 
-# Optimizer related custom types
-OptimType = torch.optim
+# MBS dataloaders related custom types
+MBSDataloaders = Union[ MBSDataloader, List[MBSDataloader] ]

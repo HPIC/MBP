@@ -1,66 +1,58 @@
 import math
+
+from typing import List
+from torch.utils.data import DataLoader
 import torch
 
-from torch.utils.data import DataLoader
 
-class MBSDataloader(DataLoader):
+class _MBSChunk:
+    def  __init__(self) -> None:
+        pass
+
+    @classmethod
+    def _chunk_dataset(
+        cls, dataset : List[torch.Tensor], mini_batch_size: int, micro_batch_size: int
+    ):
+        chunk_dataset = []
+        num_chunk = math.ceil( mini_batch_size / micro_batch_size )
+
+        for data in dataset:
+            if data.size(0) != mini_batch_size:
+                num_chunk = math.ceil( data.size(0) / micro_batch_size )
+            chunk_dataset.append(data.chunk(chunks=num_chunk))
+
+        return chunk_dataset, num_chunk
+
+class MBSDataloader(_MBSChunk):
     def __init__(
-        self,
-        target_dataloader : DataLoader,
-        micro_batch_size : int = None
+        self, dataloader : DataLoader, micro_batch_size : int = None, mbs = None
     ) -> None:
-        self.dataloader = target_dataloader
-        self.dataset = target_dataloader.dataset
-        self.mini_batch_size = target_dataloader.batch_size
+        self._comm_mbs = mbs
+        self._dataloader = dataloader
+        self._dataset = dataloader.dataset
+        self._mini_batch_size = dataloader.batch_size
 
         if micro_batch_size == None:
-            self.micro_batch_size = self.mini_batch_size
+            self._micro_batch_size = self._mini_batch_size
         else:
-            self.micro_batch_size = micro_batch_size
-
-    def chunk_dataset(self, dataset):
-        rtn_dataset = []
-        num_chunk = math.ceil( self.mini_batch_size / self.micro_batch_size )
-
-        for _, data in enumerate(dataset):
-            data = dataset.get(data) if isinstance(dataset, dict) else data
-            if isinstance(data, torch.Tensor):
-                if data.size(0) != self.mini_batch_size:
-                    num_chunk = math.ceil( data.size(0) / self.micro_batch_size )
-                rtn_dataset.append(data.chunk( num_chunk ))
-            else:
-                rtn_dataset.append(no_tensor_chunk(data, num_chunk))
-
-        return rtn_dataset, num_chunk
+            self._micro_batch_size = micro_batch_size
 
     def __iter__(self):
-        for data in self.dataloader:
-            micro_dataset, num_micro_batch = self.chunk_dataset(data)
+        for data in self._dataloader:
+            micro_dataset, num_micro_batch = self._chunk_dataset(data, self._mini_batch_size, self._micro_batch_size)
             for midx in range(num_micro_batch):
-                zero_grad_timing = midx == 0
-                update_timing = (midx + 1) == num_micro_batch
+                self._comm_mbs._zero_grad_timing = midx == 0
+                self._comm_mbs._update_timing = (midx + 1) == num_micro_batch
                 rtn_data = [ micro_dataset[cidx][midx] for cidx, _ in enumerate(micro_dataset) ]
-                yield (zero_grad_timing, update_timing, rtn_data)
+                yield rtn_data
 
     def __len__(self):
-        return len(self.dataloader)
+        return len(self._dataloader)
 
     def micro_len(self):
-        total_num_dataset = len(self.dataset)
-        std_micro_len = ( total_num_dataset // self.micro_batch_size ) + \
-            math.ceil( (total_num_dataset % self.micro_batch_size) / self.micro_batch_size )
+        total_num_dataset = len(self._dataset)
+        std_micro_len = ( total_num_dataset // self._micro_batch_size ) + \
+            math.ceil( (total_num_dataset % self._micro_batch_size) / self._micro_batch_size )
 
         return std_micro_len
 
-def no_tensor_chunk(dataset, num_chunk):
-    temp = []
-    rtn_dataset = []
-    step = math.ceil( len(dataset) / num_chunk )
-
-    for idx, data in enumerate(dataset):
-        temp.append(data)
-        if (idx + 1) % step == 0 or (idx + 1) == len(dataset):
-            rtn_dataset.append(temp)
-            temp = []
-
-    return rtn_dataset
