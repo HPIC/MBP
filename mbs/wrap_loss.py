@@ -1,13 +1,14 @@
 import math
 import torch
 import torch.nn as nn
-import torch.nn.modules.loss as loss
+
+from mbs.micro_batch_streaming import MicroBatchStreaming
 
 class MBSLoss(nn.Module):
     def __init__(
         self,
-        loss_fn,
-        mbs,
+        loss_fn : nn.Module,
+        mbs : MicroBatchStreaming,
         mini_batch_size : int,
         micro_batch_size : int
     ) -> None:

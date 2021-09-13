@@ -4,6 +4,7 @@ from typing import List
 from torch.utils.data import DataLoader
 import torch
 
+from mbs.micro_batch_streaming import MicroBatchStreaming
 
 class _MBSChunk:
     def  __init__(self) -> None:
@@ -25,7 +26,7 @@ class _MBSChunk:
 
 class MBSDataloader(_MBSChunk):
     def __init__(
-        self, dataloader : DataLoader, micro_batch_size : int = None, mbs = None
+        self, dataloader : DataLoader, micro_batch_size : int = None, mbs : MicroBatchStreaming = None
     ) -> None:
         self._comm_mbs = mbs
         self._dataloader = dataloader

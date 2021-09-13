@@ -3,6 +3,7 @@ from typing import List, Tuple, Union
 from torch.optim.optimizer import Optimizer
 from mbs.wrap_dataloader import MBSDataloader
 from mbs.wrap_optimizer import MBSOptimizer
+from mbs.wrap_loss import MBSLoss
 
 __all__ = [
     "TorchSingleOptimizer",
@@ -11,6 +12,7 @@ __all__ = [
     "MBSSingleOptimizer",
     "MBSOptimizers",
     "MBSDataloaders",
+    "MBSLosses",
 ]
 
 # PyTorch Optimizer related custom types
@@ -24,3 +26,6 @@ MBSOptimizers = List[ MBSOptimizer ]
 
 # MBS dataloaders related custom types
 MBSDataloaders = Union[ MBSDataloader, List[MBSDataloader] ]
+
+# MBS loss function related cutom types
+MBSLosses = Union[ MBSLoss, List[MBSLoss] ]
