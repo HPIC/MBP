@@ -1,5 +1,5 @@
 import itertools
-
+import math, random
 import json
 import time
 from typing import List
@@ -23,7 +23,10 @@ from mbs.micro_batch_streaming import MicroBatchStreaming
 class XcepTrainer:
     def __init__(self, config: ConfigParser) -> None:
         self.config = config
-        self.json_file = {}
+
+        self.train_loss = {}
+        self.train_time = {}
+        self.val_accuracy = {}
 
     @classmethod
     def _save_state_dict(cls, state_dict: dict, path: str) -> None:
@@ -33,16 +36,17 @@ class XcepTrainer:
     @classmethod
     def _save_log(cls, log, is_mbs, batch_size) -> None:
         ensure_dir("./loss/")
-        with open(f"./loss/xcep_mbs_{is_mbs}_{batch_size}_loss_value.json", "w") as file:
+        with open(f"./loss/xcep_mbs_{is_mbs}_{batch_size}.json", "w") as file:
             json.dump(log, file, indent=4)
 
     @classmethod
-    def _get_data_loader(cls, dataset_config: DotDict) -> DataLoader:
+    def _get_data_loader(cls, dataset_config: DotDict, is_train: bool) -> DataLoader:
         dataloader = get_dataset(
             path=dataset_config.path + dataset_config.type,
             dataset_type=dataset_config.type,
             batch_size=dataset_config.batch_size,
             image_size=dataset_config.image_size,
+            is_train=is_train
         )
         return dataloader
 
@@ -59,88 +63,152 @@ class XcepTrainer:
 
     def _get_model_optimizer(self, device: torch.device, image_size: int) -> None:
         # Define Models
-        self.enet_model = Xception(
+        model = Xception(
             self.config.data.dataset.train.num_classes
         ).to(device)
 
         # Define loss function.
-        self.criterion = nn.CrossEntropyLoss().to(device)
+        criterion = nn.CrossEntropyLoss().to(device)
 
         # Define optimizers
-        self.opt = torch.optim.SGD( 
-            self.enet_model.parameters(), 
+        opt = torch.optim.SGD( 
+            model.parameters(), 
             lr=self.config.data.optimizer.lr,
+            momentum=self.config.data.optimizer.mometum,
             weight_decay=self.config.data.optimizer.decay,
         )
 
+        return model, criterion, opt
+
     def train(self) -> None:
+        # Setting Random seed.
+        random_seed = 42
+
+        torch.manual_seed(random_seed)
+        torch.cuda.manual_seed(random_seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+        random.seed(random_seed)
+
         device, _ = prepare_device(target=self.config.data.gpu.device)
-        dataloader = self._get_data_loader(self.config.data.dataset.train)
-        self._get_model_optimizer(
+        train_dataloader = self._get_data_loader(self.config.data.dataset.train, True)
+        val_dataloader = self._get_data_loader(self.config.data.dataset.test, False)
+        model, criterion, opt = self._get_model_optimizer(
             device=device, image_size=self.config.data.dataset.train.image_size
         )
 
-        optim_list = [self.opt]
-
         if self.config.data.microbatchstream.enable:
-            dataloader, optim_list = self._init_microbatch_stream(
-                dataloader, optim_list, self.config.data.microbatchstream.micro_batch_size
-            )
+            mbs = MicroBatchStreaming()
+            train_dataloader = mbs.set_dataloader( train_dataloader, self.config.data.microbatchstream.micro_batch_size )
+            criterion = mbs.set_loss( criterion )
+            opt = mbs.set_optimizer( opt )
+            print("Apply Micro Batch Streaming method!")
 
-        self.loss_values = {}
+        self.model = model
+        self.criterion = criterion
+        self.opt = opt
 
         for epoch in range(self.config.data.train.epoch):
-            self._train_epoch(epoch, dataloader, self.loss_values, device)
+            self._train_epoch(epoch, train_dataloader, device)
+            self._val_accuracy(epoch, val_dataloader, device)
 
-        self._save_log(self.json_file, self.config.data.microbatchstream.enable, self.config.data.dataset.train.batch_size)
+        for epoch in self.train_loss:
+            self.val_accuracy[epoch]['train loss'] = self.train_loss[epoch]
+            self.val_accuracy[epoch]['epoch avg time'] = self.train_time[epoch]
+
+        self._save_log(
+            self.val_accuracy,
+            self.config.data.microbatchstream.enable,
+            self.config.data.dataset.train.batch_size
+        )
 
         self._save_state_dict(
-            self.enet_model.state_dict(),
+            self.model.state_dict(),
             f"./parameters/{self.config.data.dataset.train.type}_mbs_{self.config.data.microbatchstream.enable}/model.pth"
         )
 
-    def _train_epoch(self, epoch, dataloader, loss_values, device) -> None:
-
+    def _train_epoch(
+        self, epoch: int, dataloader: DataLoader, device: torch.device
+    ) -> None:
         # Define check performance vars
         epoch_time = 0
         epoch_iter = 0
         train_time = 0
         train_iter = 0
 
+        losses = 0
+
         epoch_start = time.perf_counter()
-        loss_values[epoch] = {"loss": 0.0}
         # pre_para = None
-        for idx, (ze, up, (image, label)) in enumerate(dataloader):
+        for idx, (image, label) in enumerate(dataloader):
             train_start = time.perf_counter()
 
             input = image.to(device)
             label = label.to(device)
-            output = self.enet_model( input )
+            output = self.model( input )
             loss = self.criterion( output, label )
 
-            self.opt.zero_grad_accu(ze)
+            self.opt.zero_grad()
             loss.backward()
-            self.opt.step_accu(up)
+            self.opt.step()
 
             train_end = time.perf_counter()
             train_time += train_end - train_start
-            train_iter += 1 if up else 0
-            loss_values[epoch]["loss"] += loss.detach().item()
+            train_iter += 1
+            losses += loss.detach().item()
         epoch_end = time.perf_counter()
         epoch_time += epoch_end - epoch_start
         epoch_iter += 1
 
-        loss_values[epoch]["loss"] /= idx
-        if epoch == 0:
-            self.init_loss_value = loss_values[epoch]["loss"]
+        if self.config.data.microbatchstream.enable:
+            losses *= math.ceil(self.config.data.dataset.train.batch_size / self.config.data.microbatchstream.micro_batch_size) 
+        losses /= idx
 
         self._epoch_writer(
             epoch,
             self.config.data.train.epoch,
-            train_time,
-            train_iter,
-            epoch_time,
-            epoch_iter
+            train_time, train_iter,
+            epoch_time, epoch_iter,
+            losses
+        )
+
+    def _val_accuracy(
+        self, epoch: int, dataloader: DataLoader, device: torch.device
+    ) -> None:
+        total = 0
+        correct_top1 = 0
+        correct_top5 = 0
+        with torch.no_grad():
+            for _, (input, label) in enumerate(dataloader):
+                input = input.to(device)
+                label = label.to(device)
+                output : torch.Tensor = self.model(input)
+
+                # rank 1
+                _, pred = torch.max(output, 1)
+                total += label.size(0)
+                correct_top1 += (pred == label).sum().item()
+
+                # rank 5
+                _, rank5 = output.topk(5, 1, True, True)
+                rank5 = rank5.t()
+                correct5 = rank5.eq(label.view(1, -1).expand_as(rank5))
+
+                for k in range(6):
+                    correct_k = correct5[:k].reshape(-1).float().sum(0, keepdim=True)
+                correct_top5 += correct_k.item()
+
+        self.val_accuracy[epoch + 1] = {
+            'top-1' : 100 * ( correct_top1 / total ),
+            'top-5' : 100 * ( correct_top5 / total )
+        }
+        print(
+            'top-1 :',
+            format(100 * ( correct_top1 / total ), ".2f"),
+            'top-5 :',
+            format(100 * ( correct_top5 / total ), ".2f"),
+            end='\r'
         )
 
     def _epoch_writer(
@@ -151,7 +219,11 @@ class XcepTrainer:
         train_iter: int,
         epoch_time: float,
         epoch_iter: int,
+        epoch_loss: float
     ) -> None:
+        self.train_loss[epoch + 1] = epoch_loss
+        self.train_time[epoch + 1] = epoch_time / epoch_iter
+
         print(
             f"[{epoch+1}/{epochs}]",
             "train time :",
@@ -160,13 +232,12 @@ class XcepTrainer:
             format(epoch_time / epoch_iter, ".3f") + "s",
             end=" ",
         )
-        self.json_file[epoch + 1] = {}
-        for _, name in enumerate(self.loss_values[epoch]):
-            print(
-                f"{name} :",
-                format(self.loss_values[epoch][name], ".2f")
-            )
-            self.json_file[epoch + 1][name] = self.loss_values[epoch][name]
+        print(
+            # f"loss : {self.train_loss[epoch+1]}",
+            f"loss : ",
+            format(self.train_loss[epoch + 1], ".4f"),
+            end=' '
+        )
 
 def train(config: ConfigParser):
     trainer = XcepTrainer(config)

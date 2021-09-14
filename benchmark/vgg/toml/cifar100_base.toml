@@ -1,8 +1,13 @@
-title = "EfficientNet"
+title = "VGG"
+
+# Select model version (16, 19)
+[model]
+normbatch = false
+version = 16
 
 # Setting Optimizer
 [optimizer]
-lr = 0.1
+lr = 0.05
 mometum = 0.9
 decay = 0.0005
 
@@ -12,26 +17,26 @@ device = 0
 
 # Train Related Configurations
 [train]
-epoch = 100
+epoch = 300
 
 # Dataset Related Configurations
 [dataset]
   [dataset.train]
-    type="cifar10"
+    type="cifar100"
     path="./dataset/"
-    num_classes = 10
+    num_classes = 100
     batch_size = 512
     image_size = 32
     num_worker = 16
 
   [dataset.test]
-    type="cifar10"
+    type="cifar100"
     path="./dataset/"
-    num_classes = 10
-    batch_size = 64
+    num_classes = 100
+    batch_size = 4
     image_size = 256
 
 # Micro Batch Streaming
 [microbatchstream]
-enable = true
-micro_batch_size = 64
+enable = false
+micro_batch_size = 54

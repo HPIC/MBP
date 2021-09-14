@@ -1,13 +1,11 @@
-import itertools
-import math
-import random
+import math, random
 import json
 import time
 from typing import List
 
 # Get dataset and model
 from dataloader import get_dataset
-from models.vgg.vgg import select_model
+from models.efficientnet.effinet import EfficientNetB0
 
 # PyTorch
 import torch
@@ -21,11 +19,12 @@ from util.util import ensure_dir, ensure_file_can_create, prepare_device
 from mbs.micro_batch_streaming import MicroBatchStreaming
 
 
-class VGGTrainer:
+class ENETTrainer:
     def __init__(self, config: ConfigParser) -> None:
         self.config = config
 
         self.train_loss = {}
+        self.train_time = {}
         self.val_accuracy = {}
 
     @classmethod
@@ -34,9 +33,9 @@ class VGGTrainer:
         torch.save(state_dict, path)
 
     @classmethod
-    def _save_log(cls, log, is_mbs, batch_size, depth, bn) -> None:
+    def _save_log(cls, log, is_mbs, batch_size) -> None:
         ensure_dir("./loss/")
-        with open(f"./loss/vgg{depth}_bn_{bn}_mbs_{is_mbs}_{batch_size}.json", "w") as file:
+        with open(f"./loss/enet_mbs_{is_mbs}_{batch_size}.json", "w") as file:
             json.dump(log, file, indent=4)
 
     @classmethod
@@ -52,19 +51,18 @@ class VGGTrainer:
 
     @staticmethod
     def _init_microbatch_stream(
-        dataloader: DataLoader, optim: Optimizer, micro_batch_size: int
+        dataloader: DataLoader, optim_list: List[Optimizer], micro_batch_size: int
     ) -> List[Optimizer]:
         # Define MicroBatchStreaming
         mbs = MicroBatchStreaming()
         dataloader = mbs.set_dataloader(dataloader, micro_batch_size)
-        optim = mbs.set_optimizer(optim)
-        return dataloader, optim
+        for optim in optim_list:
+            optim = mbs.set_optimizer(optim)
+        return dataloader, optim_list
 
-    def _get_model_optimizer(self, device: torch.device) -> None:
+    def _get_model_optimizer(self, device: torch.device, image_size: int) -> None:
         # Define Models
-        model = select_model(
-            self.config.data.model.normbatch,
-            self.config.data.model.version,
+        model = EfficientNetB0(
             self.config.data.dataset.train.num_classes
         ).to(device)
 
@@ -78,6 +76,7 @@ class VGGTrainer:
             momentum=self.config.data.optimizer.mometum,
             weight_decay=self.config.data.optimizer.decay,
         )
+
         return model, criterion, opt
 
     def train(self) -> None:
@@ -91,44 +90,41 @@ class VGGTrainer:
 
         random.seed(random_seed)
 
-        # Build model and dataloader, optimizer
         device, _ = prepare_device(target=self.config.data.gpu.device)
-        dataloader = self._get_data_loader(self.config.data.dataset.train, True)
+        train_dataloader = self._get_data_loader(self.config.data.dataset.train, True)
         val_dataloader = self._get_data_loader(self.config.data.dataset.test, False)
-        model, criterion, opt = self._get_model_optimizer( device=device )
+        model, criterion, opt = self._get_model_optimizer(
+            device=device, image_size=self.config.data.dataset.train.image_size
+        )
 
         if self.config.data.microbatchstream.enable:
-            print(f"Build Micro Batch Streaming! vgg{self.config.data.model.version}")
-            # dataloader, self.opt = self._init_microbatch_stream(
-            #     dataloader, self.opt, self.config.data.microbatchstream.micro_batch_size
-            # )
             mbs = MicroBatchStreaming()
-            dataloader = mbs.set_dataloader(dataloader, self.config.data.microbatchstream.micro_batch_size)
-            criterion = mbs.set_loss(criterion)
-            opt = mbs.set_optimizer(opt)
+            train_dataloader = mbs.set_dataloader( train_dataloader, self.config.data.microbatchstream.micro_batch_size )
+            criterion = mbs.set_loss( criterion )
+            opt = mbs.set_optimizer( opt )
+            print("Apply Micro Batch Streaming method!")
 
-        self.vgg_model = model
+        self.model = model
         self.criterion = criterion
         self.opt = opt
 
         for epoch in range(self.config.data.train.epoch):
-            self._train_epoch(epoch, dataloader, device)
+            self._train_epoch(epoch, train_dataloader, device)
             self._val_accuracy(epoch, val_dataloader, device)
 
         for epoch in self.train_loss:
             self.val_accuracy[epoch]['train loss'] = self.train_loss[epoch]
+            self.val_accuracy[epoch]['epoch avg time'] = self.train_time[epoch]
 
         self._save_log(
             self.val_accuracy,
             self.config.data.microbatchstream.enable,
-            self.config.data.dataset.train.batch_size,
-            self.config.data.model.version,
-            self.config.data.normbatch
+            self.config.data.dataset.train.batch_size
         )
 
         self._save_state_dict(
-            self.vgg_model.state_dict(),
-            f"./parameters/{self.config.data.dataset.train.type}_mbs_{self.config.data.microbatchstream.enable}/vgg.pth"
+            self.model.state_dict(),
+            f"./parameters/{self.config.data.dataset.train.type}_mbs_{self.config.data.microbatchstream.enable}/model.pth"
         )
 
     def _train_epoch(
@@ -149,7 +145,7 @@ class VGGTrainer:
 
             input = image.to(device)
             label = label.to(device)
-            output = self.vgg_model( input )
+            output = self.model( input )
             loss = self.criterion( output, label )
 
             self.opt.zero_grad()
@@ -186,7 +182,7 @@ class VGGTrainer:
             for _, (input, label) in enumerate(dataloader):
                 input = input.to(device)
                 label = label.to(device)
-                output : torch.Tensor = self.vgg_model(input)
+                output : torch.Tensor = self.model(input)
 
                 # rank 1
                 _, pred = torch.max(output, 1)
@@ -225,6 +221,7 @@ class VGGTrainer:
         epoch_loss: float
     ) -> None:
         self.train_loss[epoch + 1] = epoch_loss
+        self.train_time[epoch + 1] = epoch_time / epoch_iter
 
         print(
             f"[{epoch+1}/{epochs}]",
@@ -243,6 +240,5 @@ class VGGTrainer:
 
 
 def train(config: ConfigParser):
-    trainer = VGGTrainer(config)
+    trainer = ENETTrainer(config)
     trainer.train()
-

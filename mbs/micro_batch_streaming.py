@@ -1,31 +1,72 @@
-import types
+from typing import List, Union
 
-from mbs.types import ModelList
+import torch
+import torch.nn as nn
+from torch.optim.optimizer import Optimizer
+from torch.utils.data import DataLoader
+
+from mbs.types import (
+    TorchSingleOptimizer,
+    TorchMultiOptimizer,
+    TorchOptimizer,
+    MBSSingleOptimizer,
+    MBSOptimizers,
+    MBSDataloaders,
+    MBSLosses,
+)
 from mbs.wrap_dataloader import MBSDataloader
-
+from mbs.wrap_optimizer import MBSOptimizer
+from mbs.wrap_loss import MBSLoss
 
 class MicroBatchStreaming:
-    """
-    This class is running like dataloader or enumerate
-    """
+    def __init__( self ) -> None:
+        self._zero_grad_timing : bool = False
+        self._update_timing : bool = False
+        self._optimizers : MBSOptimizers = []
+        self._dataloaders : MBSDataloaders = []
+        self._losses : MBSLosses = []
+        self._mini_batch_size : int = None
+        self._micro_batch_size : int = None
 
-    def __init__(self) -> None:
-        self.models: ModelList = []
+    ''' Control dataloader '''
+    def set_dataloader(
+        self, dataloader : DataLoader, micro_batch_size : int = 4
+    ):
+        self._mini_batch_size = dataloader.batch_size
+        self._micro_batch_size = micro_batch_size
+        mbs_dataloader = MBSDataloader(
+            dataloader=dataloader,
+            micro_batch_size=micro_batch_size,
+            mbs=self
+        )
+        self._dataloaders.append( mbs_dataloader )
+        # return MBSBlock( dataloader=mbs_dataloader, mbs=self )
+        return mbs_dataloader
 
-    def set_dataloader(self, dataloader, micro_batch_size):
-        return MBSDataloader(dataloader, micro_batch_size)
+    ''' Control optimizer '''
+    def set_optimizer(
+        self, optimizer : Optimizer
+    ):
+        mbs_optimizer = MBSOptimizer(
+            optimizer,
+            mbs=self
+        )
+        self._optimizers.append( mbs_optimizer )
+        # return MBSBlock( optimizer=mbs_optimizer, mbs=self )
+        return mbs_optimizer
 
-    def set_optimizer(self, _optim):
-        _optim.step_accu = types.MethodType(step_accu, _optim)
-        _optim.zero_grad_accu = types.MethodType(zero_grad_accu, _optim)
-        return _optim
+    ''' Control optimizer '''
+    def set_loss(
+        self, loss_fn : nn.Module, normalize_factor : Union[int, float] = None
+    ):
+        mbs_loss = MBSLoss(
+            loss_fn=loss_fn,
+            mbs=self,
+            mini_batch_size=self._mini_batch_size,
+            micro_batch_size=self._micro_batch_size,
+            normalize_factor=normalize_factor
+        )
+        self._losses.append( mbs_loss )
+        return mbs_loss
 
 
-def step_accu(self, _update: bool = False):
-    if _update:
-        self.step()
-
-
-def zero_grad_accu(self, _zero: bool = False):
-    if _zero:
-        self.zero_grad()
