@@ -71,4 +71,3 @@ if __name__ == '__main__':
     print('Check...OK!')
     test_cifar10_dataset()
     print('Check...OK!')
-

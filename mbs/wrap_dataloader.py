@@ -76,4 +76,3 @@ class MBSDataloader:
             math.ceil( (total_num_dataset % self._micro_batch_size) / self._micro_batch_size )
 
         return std_micro_len
-

@@ -69,4 +69,3 @@ class MicroBatchStreaming:
         self._losses.append( mbs_loss )
         return mbs_loss
 
-

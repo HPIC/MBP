@@ -245,4 +245,3 @@ class VGGTrainer:
 def train(config: ConfigParser):
     trainer = VGGTrainer(config)
     trainer.train()
-

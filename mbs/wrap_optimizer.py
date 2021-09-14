@@ -18,4 +18,3 @@ class MBSOptimizer(Optimizer):
         if self._comm_mbs._update_timing:
             # print('update')
             self._optimizer.step()
-
