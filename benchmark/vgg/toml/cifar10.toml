@@ -3,7 +3,7 @@ title = "VGG"
 # Select model version (16, 19)
 [model]
 normbatch = false
-version = 16
+version = 19
 
 # Setting Optimizer
 [optimizer]
@@ -33,8 +33,9 @@ epoch = 300
     type="cifar10"
     path="./dataset/"
     num_classes = 10
-    batch_size = 4
-    image_size = 256
+    batch_size = 32
+    image_size = 32
+    num_worker = 16
 
 # Micro Batch Streaming
 [microbatchstream]

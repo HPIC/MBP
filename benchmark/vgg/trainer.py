@@ -1,5 +1,6 @@
 import itertools
-
+import math
+import random
 import json
 import time
 from typing import List
@@ -40,54 +41,75 @@ class VGGTrainer:
 
     @classmethod
     def _get_data_loader(cls, dataset_config: DotDict, is_train: bool) -> DataLoader:
-        dataloader, val_dataloader = get_dataset(
+        dataloader = get_dataset(
             path=dataset_config.path + dataset_config.type,
             dataset_type=dataset_config.type,
             batch_size=dataset_config.batch_size,
             image_size=dataset_config.image_size,
             is_train=is_train
         )
-        return dataloader, val_dataloader
+        return dataloader
 
     @staticmethod
     def _init_microbatch_stream(
-        dataloader: DataLoader, optim_list: List[Optimizer], micro_batch_size: int
+        dataloader: DataLoader, optim: Optimizer, micro_batch_size: int
     ) -> List[Optimizer]:
         # Define MicroBatchStreaming
         mbs = MicroBatchStreaming()
         dataloader = mbs.set_dataloader(dataloader, micro_batch_size)
-        for optim in optim_list:
-            optim = mbs.set_optimizer(optim)
-        return dataloader, optim_list
+        optim = mbs.set_optimizer(optim)
+        return dataloader, optim
 
     def _get_model_optimizer(self, device: torch.device) -> None:
         # Define Models
-        self.vgg_model = select_model(
+        model = select_model(
             self.config.data.model.normbatch,
             self.config.data.model.version,
             self.config.data.dataset.train.num_classes
         ).to(device)
 
         # Define loss function.
-        self.criterion = nn.CrossEntropyLoss().to(device)
+        criterion = nn.CrossEntropyLoss().to(device)
 
         # Define optimizers
-        self.opt = torch.optim.SGD( 
-            self.vgg_model.parameters(), 
+        opt = torch.optim.SGD( 
+            model.parameters(), 
             lr=self.config.data.optimizer.lr,
+            momentum=self.config.data.optimizer.mometum,
             weight_decay=self.config.data.optimizer.decay,
         )
+        return model, criterion, opt
 
     def train(self) -> None:
+        # Setting Random seed.
+        random_seed = 42
+
+        torch.manual_seed(random_seed)
+        torch.cuda.manual_seed(random_seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+        random.seed(random_seed)
+
+        # Build model and dataloader, optimizer
         device, _ = prepare_device(target=self.config.data.gpu.device)
-        dataloader, val_dataloader = self._get_data_loader(self.config.data.dataset.train, True)
-        self._get_model_optimizer( device=device )
-        optim_list = [self.opt]
+        dataloader = self._get_data_loader(self.config.data.dataset.train, True)
+        val_dataloader = self._get_data_loader(self.config.data.dataset.test, False)
+        model, criterion, opt = self._get_model_optimizer( device=device )
 
         if self.config.data.microbatchstream.enable:
-            dataloader, optim_list = self._init_microbatch_stream(
-                dataloader, optim_list, self.config.data.microbatchstream.micro_batch_size
-            )
+            print(f"Build Micro Batch Streaming! vgg{self.config.data.model.version}")
+            # dataloader, self.opt = self._init_microbatch_stream(
+            #     dataloader, self.opt, self.config.data.microbatchstream.micro_batch_size
+            # )
+            mbs = MicroBatchStreaming()
+            dataloader = mbs.set_dataloader(dataloader, self.config.data.microbatchstream.micro_batch_size)
+            criterion = mbs.set_loss(criterion)
+            opt = mbs.set_optimizer(opt)
+
+        self.vgg_model = model
+        self.criterion = criterion
+        self.opt = opt
 
         for epoch in range(self.config.data.train.epoch):
             self._train_epoch(epoch, dataloader, device)
@@ -142,6 +164,8 @@ class VGGTrainer:
         epoch_time += epoch_end - epoch_start
         epoch_iter += 1
 
+        if self.config.data.microbatchstream.enable:
+            losses *= math.ceil(self.config.data.dataset.train.batch_size / self.config.data.microbatchstream.micro_batch_size) 
         losses /= idx
 
         self._epoch_writer(
@@ -156,24 +180,39 @@ class VGGTrainer:
         self, epoch: int, dataloader: DataLoader, device: torch.device
     ) -> None:
         total = 0
-        correct = 0
-        losses = 0
+        correct_top1 = 0
+        correct_top5 = 0
         with torch.no_grad():
             for _, (input, label) in enumerate(dataloader):
                 input = input.to(device)
                 label = label.to(device)
-
                 output : torch.Tensor = self.vgg_model(input)
-                loss = self.criterion(output, label)
-                _, predicted = torch.max(output.data, 1)
+
+                # rank 1
+                _, pred = torch.max(output, 1)
                 total += label.size(0)
-                correct += (predicted == label).sum().item()
-                losses += loss.detach().item()
+                correct_top1 += (pred == label).sum().item()
+
+                # rank 5
+                _, rank5 = output.topk(5, 1, True, True)
+                rank5 = rank5.t()
+                correct5 = rank5.eq(label.view(1, -1).expand_as(rank5))
+
+                for k in range(6):
+                    correct_k = correct5[:k].reshape(-1).float().sum(0, keepdim=True)
+                correct_top5 += correct_k.item()
 
         self.val_accuracy[epoch + 1] = {
-            'val loss' : losses / total,
-            'accuracy' : 100 * ( correct / total )
+            'top-1' : 100 * ( correct_top1 / total ),
+            'top-5' : 100 * ( correct_top5 / total )
         }
+        print(
+            'top-1 :',
+            format(100 * ( correct_top1 / total ), ".2f"),
+            'top-5 :',
+            format(100 * ( correct_top5 / total ), ".2f"),
+            end='\r'
+        )
 
     def _epoch_writer(
         self,
@@ -196,8 +235,10 @@ class VGGTrainer:
             end=" ",
         )
         print(
-            f"loss :",
-            format(self.train_loss[epoch + 1], ".2f")
+            # f"loss : {self.train_loss[epoch+1]}",
+            f"loss : ",
+            format(self.train_loss[epoch + 1], ".4f"),
+            end=' '
         )
 
 

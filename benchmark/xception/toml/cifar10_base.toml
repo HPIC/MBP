@@ -1,4 +1,4 @@
-title = "EfficientNet"
+title = "Xception"
 
 # Setting Optimizer
 [optimizer]
@@ -8,7 +8,7 @@ decay = 0.0005
 
 # Device Related Configurations
 [gpu]
-device = 0
+device = 1
 
 # Train Related Configurations
 [train]
@@ -28,10 +28,10 @@ epoch = 100
     type="cifar10"
     path="./dataset/"
     num_classes = 10
-    batch_size = 64
+    batch_size = 4
     image_size = 256
 
 # Micro Batch Streaming
 [microbatchstream]
-enable = true
+enable = false
 micro_batch_size = 64

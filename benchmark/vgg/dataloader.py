@@ -69,23 +69,7 @@ def rtn_cifar10(path, batch_size, image_size=None, is_train=True):
     )
     dataloader = DataLoader( dataset, batch_size=batch_size, shuffle=True, pin_memory=True )
 
-    if is_train:
-        val_dataset = datasets.CIFAR10( root=path, train=False,
-                transform=transforms.Compose(
-                    [
-                        # transforms.Resize((image_size, image_size)),
-                        transforms.RandomHorizontalFlip(),
-                        transforms.RandomCrop(32, 4),
-                        transforms.ToTensor(),
-                        normalize
-                    ]
-                )
-        )
-        val_dataloader = DataLoader( val_dataset, batch_size=batch_size, shuffle=True, pin_memory=True )
-    else:
-        val_dataloader = None
-
-    return dataloader, val_dataloader
+    return dataloader
 
 
 def rtn_cifar100(path, batch_size, image_size=None, is_train=True):
@@ -107,23 +91,7 @@ def rtn_cifar100(path, batch_size, image_size=None, is_train=True):
     )
     dataloader = DataLoader( dataset, batch_size=batch_size, shuffle=True, pin_memory=True )
 
-    if is_train:
-        val_dataset = datasets.CIFAR100( root=path, train=False,
-                transform=transforms.Compose(
-                    [
-                        # transforms.Resize((image_size, image_size)),
-                        transforms.RandomHorizontalFlip(),
-                        transforms.RandomCrop(32, 4),
-                        transforms.ToTensor(),
-                        normalize
-                    ]
-                )
-        )
-        val_dataloader = DataLoader( val_dataset, batch_size=batch_size, shuffle=True, pin_memory=True )
-    else:
-        val_dataloader = None
-
-    return dataloader, val_dataloader
+    return dataloader
 
 
 if __name__=='__main__':

@@ -20,7 +20,7 @@ epoch = 100
     type="cifar10"
     path="./dataset/"
     num_classes = 10
-    batch_size = 2048
+    batch_size = 512
     image_size = 32
     num_worker = 16
 
@@ -34,4 +34,4 @@ epoch = 100
 # Micro Batch Streaming
 [microbatchstream]
 enable = true
-micro_batch_size = 512
+micro_batch_size = 64
