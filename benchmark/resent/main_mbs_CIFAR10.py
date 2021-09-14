@@ -20,6 +20,8 @@ from torchgpipe import GPipe
 from mbs.micro_batch_streaming import MicroBatchStreaming
 import csv
 
+import random
+
 Stuffs = Tuple[nn.Module, int, List[torch.device]]  # (model, batch_size, devices)
 Experiment = Callable[[nn.Module, List[int]], Stuffs]
 
@@ -35,7 +37,7 @@ class Experiments:
 
     @staticmethod
     def naive128(model: nn.Module, devices: List[int]) -> Stuffs:
-        batch_size = 128
+        batch_size = 512
         device = devices[0]
         model.to(device)
         return model, batch_size, [torch.device(device)]
@@ -116,9 +118,9 @@ EXPERIMENTS: Dict[str, Experiment] = {
 }
 
 
-def dataloaders(batch_size: int, num_workers: int = 4) -> Tuple[DataLoader, DataLoader]:
-    num_workers = num_workers if batch_size <= 4096 else num_workers // 2
-
+def dataloaders(batch_size: int, num_workers: int = 6) -> Tuple[DataLoader, DataLoader]:
+    #num_workers = num_workers if batch_size <= 4096 else num_workers // 2
+    num_workers = 6
     post_transforms = torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
@@ -206,7 +208,7 @@ def _init_microbatch_stream(
     # Define MicroBatchStreaming
     mbs = MicroBatchStreaming()
     train_dataloader = mbs.set_dataloader(train_dataloader, micro_batch_size)
-    valid_dataloader = mbs.set_dataloader(valid_dataloader, micro_batch_size)
+    valid_dataloader = valid_dataloader
     for optim in optim_list:
         optim = mbs.set_optimizer(optim)
     return train_dataloader, valid_dataloader, optim_list
@@ -221,7 +223,7 @@ def _init_microbatch_stream(
 @click.option(
     '--epochs', '-e',
     type=int,
-    default=90,
+    default=100,
     help='Number of epochs (default: 10)',
 )
 @click.option(
@@ -245,6 +247,17 @@ def cli(ctx: click.Context,
         devices: List[int],
         ) -> None:
     """ResNet-101 Accuracy Benchmark"""
+
+    random_seed = 42
+
+    torch.manual_seed(random_seed)
+    torch.cuda.manual_seed(random_seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    random.seed(random_seed)
+
+
     if skip_epochs > epochs:
         ctx.fail('--skip-epochs=%d must be less than --epochs=%d' % (skip_epochs, epochs))
 
@@ -261,7 +274,7 @@ def cli(ctx: click.Context,
 
     # Prepare dataloaders.
     train_dataloader, valid_dataloader = dataloaders(batch_size)
-    micro_batch_size = 128
+    micro_batch_size = 256
 
     # Optimizer with LR scheduler
     lr_multiplier = max(1.0, batch_size / 256)
@@ -270,8 +283,8 @@ def cli(ctx: click.Context,
     optim_list = [optimizer]
 
     train_dataloader, valid_dataloader, optim_list = _init_microbatch_stream(train_dataloader, valid_dataloader, optim_list, micro_batch_size)
-    steps_train = len(valid_dataloader)*(batch_size/micro_batch_size)
-    steps_valid = len(valid_dataloader)*(batch_size/micro_batch_size)
+    steps_train = train_dataloader.micro_len()
+
 
     def gradual_warmup_linear_scaling(step: int) -> float:
         epoch = step / steps_train
@@ -315,8 +328,9 @@ def cli(ctx: click.Context,
     wr = csv.writer(f)
     wr.writerow(['epoch' , 'epochs', 'train_throughput', 'train_loss', 'valid_loss', 'valid_accuracy'])
 
-    def evaluate(dataloader: DataLoader, steps) -> Tuple[float, float]:
+    def evaluate(dataloader: DataLoader) -> Tuple[float, float]:
         tick = time.time()
+        steps = len(dataloader)
         data_tested = 0
         loss_sum = torch.zeros(1, device=out_device)
         accuracy_sum = torch.zeros(1, device=out_device)
@@ -334,7 +348,7 @@ def cli(ctx: click.Context,
                 loss_sum += loss * current_batch
 
                 _, predicted = torch.max(output, 1)
-                correct = (predicted == target).sum().item()
+                correct = (predicted == target).sum()
                 accuracy_sum += correct
 
                 percent = i / steps * 100
@@ -347,10 +361,10 @@ def cli(ctx: click.Context,
 
         return loss.item(), accuracy.item()
 
-    def run_epoch(epoch: int, steps) -> Tuple[float, float]:
+    def run_epoch(epoch: int) -> Tuple[float, float]:
         torch.cuda.synchronize(in_device)
         tick = time.time()
-
+        steps = train_dataloader.micro_len()
         data_trained = 0
         loss_sum = torch.zeros(1, device=out_device)
         model.train()
@@ -359,13 +373,15 @@ def cli(ctx: click.Context,
             input = input.to(device=in_device, non_blocking=True)
             target = target.to(device=out_device, non_blocking=True)
 
+            optimizer.zero_grad()
             output = model(input)
             loss = F.cross_entropy(output, target)
 
-            optimizer.zero_grad()
             loss.backward()
 
             optimizer.step()
+
+            #if (batch_size/micro_batch_size)-1 == i%(batch_size/micro_batch_size) :
             scheduler.step()
 
             loss_sum += loss.detach() * micro_batch_size
@@ -380,7 +396,7 @@ def cli(ctx: click.Context,
         tock = time.time()
 
         train_loss = loss_sum.item() / data_trained
-        valid_loss, valid_accuracy = evaluate(valid_dataloader, steps_valid)
+        valid_loss, valid_accuracy = evaluate(valid_dataloader)
         torch.cuda.synchronize(in_device)
 
         elapsed_time = tock - tick
@@ -399,7 +415,7 @@ def cli(ctx: click.Context,
 
     hr()
     for epoch in range(epochs):
-        throughput, elapsed_time = run_epoch(epoch, steps_train)
+        throughput, elapsed_time = run_epoch(epoch)
 
         if epoch < skip_epochs:
             continue
@@ -407,7 +423,7 @@ def cli(ctx: click.Context,
         throughputs.append(throughput)
         elapsed_times.append(elapsed_time)
 
-    _, valid_accuracy = evaluate(valid_dataloader, steps_valid)
+    _, valid_accuracy = evaluate(valid_dataloader)
     hr()
 
     # RESULT ======================================================================================

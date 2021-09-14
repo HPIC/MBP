@@ -19,6 +19,7 @@ from torchgpipe import GPipe
 # Get Micro-batch streaming.
 from mbs.micro_batch_streaming import MicroBatchStreaming
 import csv
+import random
 
 Stuffs = Tuple[nn.Module, int, List[torch.device]]  # (model, batch_size, devices)
 Experiment = Callable[[nn.Module, List[int]], Stuffs]
@@ -205,7 +206,7 @@ def _init_microbatch_stream(
     # Define MicroBatchStreaming
     mbs = MicroBatchStreaming()
     train_dataloader = mbs.set_dataloader(train_dataloader, micro_batch_size)
-    valid_dataloader = mbs.set_dataloader(valid_dataloader, micro_batch_size)
+    valid_dataloader = valid_dataloader
     for optim in optim_list:
         optim = mbs.set_optimizer(optim)
     return train_dataloader, valid_dataloader, optim_list
@@ -244,6 +245,17 @@ def cli(ctx: click.Context,
         devices: List[int],
         ) -> None:
     """ResNet-101 Accuracy Benchmark"""
+
+    random_seed = 42
+
+    torch.manual_seed(random_seed)
+    torch.cuda.manual_seed(random_seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    random.seed(random_seed)
+
+
     if skip_epochs > epochs:
         ctx.fail('--skip-epochs=%d must be less than --epochs=%d' % (skip_epochs, epochs))
 
@@ -269,8 +281,7 @@ def cli(ctx: click.Context,
     optim_list = [optimizer]
 
     train_dataloader, valid_dataloader, optim_list = _init_microbatch_stream(train_dataloader, valid_dataloader, optim_list, micro_batch_size)
-    steps_train = train_dataloader.length*(batch_size/micro_batch_size)
-    steps_valid = valid_dataloader.length*(batch_size/micro_batch_size)
+    steps_train = train_dataloader.micro_len()
 
     def gradual_warmup_linear_scaling(step: int) -> float:
         epoch = step / steps_train
@@ -313,8 +324,9 @@ def cli(ctx: click.Context,
     wr = csv.writer(f)
     wr.writerow(['epoch' , 'epochs', 'train_throughput', 'train_loss', 'valid_loss', 'valid_accuracy'])
 
-    def evaluate(dataloader: DataLoader, steps) -> Tuple[float, float]:
+    def evaluate(dataloader: DataLoader) -> Tuple[float, float]:
         tick = time.time()
+        steps = len(dataloader)
         data_tested = 0
         loss_sum = torch.zeros(1, device=out_device)
         accuracy_sum = torch.zeros(1, device=out_device)
@@ -345,10 +357,10 @@ def cli(ctx: click.Context,
 
         return loss.item(), accuracy.item()
 
-    def run_epoch(epoch: int, steps) -> Tuple[float, float]:
+    def run_epoch(epoch: int) -> Tuple[float, float]:
         torch.cuda.synchronize(in_device)
         tick = time.time()
-
+        steps = train_dataloader.micro_len()
         data_trained = 0
         loss_sum = torch.zeros(1, device=out_device)
         model.train()
@@ -356,13 +368,15 @@ def cli(ctx: click.Context,
             data_trained += micro_batch_size
             input = input.to(device=in_device, non_blocking=True)
             target = target.to(device=out_device, non_blocking=True)
+            
+            optimizer.zero_grad()
             output = model(input)
             loss = F.cross_entropy(output, target)
 
-            optimizer.zero_grad()
             loss.backward()
             
             optimizer.step()
+
             scheduler.step()
 
             loss_sum += loss.detach() * micro_batch_size
@@ -377,7 +391,7 @@ def cli(ctx: click.Context,
         tock = time.time()
 
         train_loss = loss_sum.item() / data_trained
-        valid_loss, valid_accuracy = evaluate(valid_dataloader, steps_valid)
+        valid_loss, valid_accuracy = evaluate(valid_dataloader)
         torch.cuda.synchronize(in_device)
 
         elapsed_time = tock - tick
@@ -389,8 +403,6 @@ def cli(ctx: click.Context,
                   valid_loss, valid_accuracy),
             clear=True)
 
-        
-
         return throughput, elapsed_time
 
     throughputs = []
@@ -398,7 +410,7 @@ def cli(ctx: click.Context,
 
     hr()
     for epoch in range(epochs):
-        throughput, elapsed_time = run_epoch(epoch, steps_train)
+        throughput, elapsed_time = run_epoch(epoch)
 
         if epoch < skip_epochs:
             continue
@@ -406,7 +418,7 @@ def cli(ctx: click.Context,
         throughputs.append(throughput)
         elapsed_times.append(elapsed_time)
 
-    _, valid_accuracy = evaluate(valid_dataloader, steps_valid)
+    _, valid_accuracy = evaluate(valid_dataloader)
     hr()
 
     # RESULT ======================================================================================

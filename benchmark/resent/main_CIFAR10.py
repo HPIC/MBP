@@ -18,6 +18,8 @@ from resnet import resnet101
 from torchgpipe import GPipe
 import csv
 
+import random
+
 Stuffs = Tuple[nn.Module, int, List[torch.device]]  # (model, batch_size, devices)
 Experiment = Callable[[nn.Module, List[int]], Stuffs]
 
@@ -33,8 +35,8 @@ class Experiments:
 
     @staticmethod
     def naive128(model: nn.Module, devices: List[int]) -> Stuffs:
-        batch_size = 128
-        device = devices[0]
+        batch_size = 512
+        device = devices[-1]
         model.to(device)
         return model, batch_size, [torch.device(device)]
 
@@ -114,9 +116,9 @@ EXPERIMENTS: Dict[str, Experiment] = {
 }
 
 
-def dataloaders(batch_size: int, num_workers: int = 4) -> Tuple[DataLoader, DataLoader]:
-    num_workers = num_workers if batch_size <= 4096 else num_workers // 2
-
+def dataloaders(batch_size: int, num_workers: int = 6) -> Tuple[DataLoader, DataLoader]:
+    #num_workers = num_workers if batch_size <= 4096 else num_workers // 2
+    num_workers = 6
     post_transforms = torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
@@ -206,7 +208,7 @@ def parse_devices(ctx: Any, param: Any, value: Optional[str]) -> List[int]:
 @click.option(
     '--epochs', '-e',
     type=int,
-    default=90,
+    default=100,
     help='Number of epochs (default: 10)',
 )
 @click.option(
@@ -228,6 +230,17 @@ def cli(ctx: click.Context,
         devices: List[int],
         ) -> None:
     """ResNet-101 Accuracy Benchmark"""
+
+    random_seed = 42
+
+    torch.manual_seed(random_seed)
+    torch.cuda.manual_seed(random_seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    random.seed(random_seed)
+
+
     if skip_epochs > epochs:
         ctx.fail('--skip-epochs=%d must be less than --epochs=%d' % (skip_epochs, epochs))
 

@@ -19,6 +19,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
+import random
 
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -124,13 +125,25 @@ if __name__ == '__main__':
     parser.add_argument('-gpu', action='store_true', default=False, help='use gpu or not')
     parser.add_argument('-gpu_device', type=int, default=0, help='select gpu device')
     parser.add_argument('-b', type=int, default=128, help='batch size for dataloader')
-    parser.add_argument('-warm', type=int, default=1, help='warm up training phase')
+    parser.add_argument('-warm', type=int, default=0, help='warm up training phase')
     parser.add_argument('-lr', type=float, default=0.1, help='initial learning rate')
     parser.add_argument('-resume', action='store_true', default=False, help='resume training')
     args = parser.parse_args()
     _device = 'cuda:' + str(args.gpu_device)
+
+    random_seed = 42
+
+    torch.manual_seed(random_seed)
+    torch.cuda.manual_seed(random_seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    random.seed(random_seed)
+
+
     device = torch.device(_device)
     net = get_network(args, device)
+
 
     #data preprocessing:
     cifar100_training_loader = get_training_dataloader(

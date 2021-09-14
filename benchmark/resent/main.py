@@ -15,6 +15,7 @@ import torchvision
 from resnet import resnet50
 from torchgpipe import GPipe
 import csv
+import random
 
 Stuffs = Tuple[nn.Module, int, List[torch.device]]  # (model, batch_size, devices)
 Experiment = Callable[[nn.Module, List[int]], Stuffs]
@@ -32,7 +33,7 @@ class Experiments:
     @staticmethod
     def naive128(model: nn.Module, devices: List[int]) -> Stuffs:
         batch_size = 128
-        device = devices[0]
+        device = devices[-1]
         model.to(device)
         return model, batch_size, [torch.device(device)]
 
@@ -225,6 +226,16 @@ def cli(ctx: click.Context,
         devices: List[int],
         ) -> None:
     """ResNet-101 Accuracy Benchmark"""
+    
+    random_seed = 42
+
+    torch.manual_seed(random_seed)
+    torch.cuda.manual_seed(random_seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    random.seed(random_seed)
+
     if skip_epochs > epochs:
         ctx.fail('--skip-epochs=%d must be less than --epochs=%d' % (skip_epochs, epochs))
 
