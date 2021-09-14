@@ -35,7 +35,7 @@ class ENETTrainer:
     @classmethod
     def _save_log(cls, log, is_mbs, batch_size) -> None:
         ensure_dir("./loss/")
-        with open(f"./loss/xcep_mbs_{is_mbs}_{batch_size}.json", "w") as file:
+        with open(f"./loss/enet_mbs_{is_mbs}_{batch_size}.json", "w") as file:
             json.dump(log, file, indent=4)
 
     @classmethod
@@ -119,9 +119,7 @@ class ENETTrainer:
         self._save_log(
             self.val_accuracy,
             self.config.data.microbatchstream.enable,
-            self.config.data.dataset.train.batch_size,
-            self.config.data.model.version,
-            self.config.data.normbatch
+            self.config.data.dataset.train.batch_size
         )
 
         self._save_state_dict(

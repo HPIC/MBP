@@ -120,9 +120,7 @@ class XcepTrainer:
         self._save_log(
             self.val_accuracy,
             self.config.data.microbatchstream.enable,
-            self.config.data.dataset.train.batch_size,
-            self.config.data.model.version,
-            self.config.data.normbatch
+            self.config.data.dataset.train.batch_size
         )
 
         self._save_state_dict(
