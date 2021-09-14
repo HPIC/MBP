@@ -1,27 +1,9 @@
 import math
-from typing import List
+from typing import Iterator, List, Tuple, Union
 from torch.utils.data import DataLoader
 import torch
 
-class _MBSChunk:
-    def  __init__(self) -> None:
-        pass
-
-    @classmethod
-    def _chunk_dataset(
-        cls, dataset : List[torch.Tensor], mini_batch_size: int, micro_batch_size: int
-    ):
-        chunk_dataset = []
-        num_chunk = math.ceil( mini_batch_size / micro_batch_size )
-
-        for data in dataset:
-            if data.size(0) != mini_batch_size:
-                num_chunk = math.ceil( data.size(0) / micro_batch_size )
-            chunk_dataset.append(data.chunk(chunks=num_chunk))
-
-        return chunk_dataset, num_chunk
-
-class MBSDataloader(_MBSChunk):
+class MBSDataloader:
     def __init__(
         self, dataloader : DataLoader, micro_batch_size : int = None, mbs = None
     ) -> None:
@@ -35,14 +17,55 @@ class MBSDataloader(_MBSChunk):
         else:
             self._micro_batch_size = micro_batch_size
 
+    def _check_dataset(self, dataset):
+        return torch.is_tensor(dataset)
+
+    def _chunk_tensor(
+        self, dataset : torch.Tensor
+    ):
+        num_chunk = math.ceil( self._mini_batch_size / self._micro_batch_size )
+        if dataset.size(0) != self._mini_batch_size:
+            num_chunk = math.ceil( dataset.size(0) / self._micro_batch_size )
+        dataset = dataset.chunk( chunks=num_chunk )
+        return dataset, num_chunk
+
+    def _chunk_tensors(
+        self, dataset : Tuple[torch.Tensor]
+    ):
+        chunk_dataset = []
+        num_chunk = math.ceil( self._mini_batch_size / self._micro_batch_size )
+        if dataset[0].size(0) != self._mini_batch_size:
+            num_chunk = math.ceil( dataset[0].size(0) / self._micro_batch_size )
+
+        for data in dataset:
+            chunk_dataset.append(data.chunk(chunks=num_chunk))
+
+        rtn_dataset = []
+        for cidx in range(num_chunk):
+            bundle = []
+            for midx in range(len(dataset)):
+                bundle.append( chunk_dataset[midx][cidx] )
+            tuple_bundle = tuple(bundle)
+            rtn_dataset.append( tuple_bundle )
+
+        return rtn_dataset, num_chunk
+
+    def _chunk(
+        self, dataset : Union[ torch.Tensor, Tuple[torch.Tensor] ]
+    ):
+        is_atomic = self._check_dataset(dataset)
+        if is_atomic:
+            return self._chunk_tensor( dataset )
+        else:
+            return self._chunk_tensors( dataset )
+
     def __iter__(self):
         for data in self._dataloader:
-            micro_dataset, num_micro_batch = self._chunk_dataset(data, self._mini_batch_size, self._micro_batch_size)
-            for midx in range(num_micro_batch):
-                self._comm_mbs._zero_grad_timing = midx == 0
-                self._comm_mbs._update_timing = (midx + 1) == num_micro_batch
-                rtn_data = [ micro_dataset[cidx][midx] for cidx, _ in enumerate(micro_dataset) ]
-                yield rtn_data
+            micro_dataset, num_micro_batch = self._chunk(data)
+            for idx in range(num_micro_batch):
+                self._comm_mbs._zero_grad_timing = idx == 0
+                self._comm_mbs._update_timing = (idx + 1) == num_micro_batch
+                yield micro_dataset[idx]
 
     def __len__(self):
         return len(self._dataloader)
