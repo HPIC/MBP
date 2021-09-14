@@ -79,3 +79,6 @@ class UNet(nn.Module):
 
         x = self.conv1x1(x)
         return torch.sigmoid(x)
+
+def unet_1156():
+    return UNet(in_channels=1, out_channels=1, depth=5, cf=6)

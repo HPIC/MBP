@@ -163,7 +163,7 @@ def get_network(args, device):
     return net
 
 
-def get_training_dataloader(mean, std, batch_size=16, num_workers=2, shuffle=True, pin_memory=True):
+def get_training_dataloader(mean, std, batch_size=16, num_workers=6, shuffle=True, pin_memory=True):
     """ return training dataloader
     Args:
         mean: mean of cifar100 training dataset
@@ -190,7 +190,7 @@ def get_training_dataloader(mean, std, batch_size=16, num_workers=2, shuffle=Tru
 
     return cifar100_training_loader
 
-def get_test_dataloader(mean, std, batch_size=16, num_workers=2, shuffle=True, pin_memory=True):
+def get_test_dataloader(mean, std, batch_size=16, num_workers=6, shuffle=True, pin_memory=True):
     """ return training dataloader
     Args:
         mean: mean of cifar100 test dataset

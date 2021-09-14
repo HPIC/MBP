@@ -184,5 +184,6 @@ better result.
 ```
 ssh -L 6006:127.0.0.1:6006 username@hostip -p'portnumber'
 
-python train-mbs.py -net resnet101 -gpu -gpu_device 1 -mbs
+python train-naive.py -net resnet101 -gpu -gpu_device 0 
+python train-mbs.py -net resnet101 -gpu -gpu_device 1 -mbs -mb 128
 ```
