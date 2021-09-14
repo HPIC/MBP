@@ -30,7 +30,7 @@ class MicroBatchStreaming:
 
     ''' Control dataloader '''
     def set_dataloader(
-        self, dataloader : DataLoader, micro_batch_size : int = None
+        self, dataloader : DataLoader, micro_batch_size : int = 4
     ):
         self._mini_batch_size = dataloader.batch_size
         self._micro_batch_size = micro_batch_size
@@ -57,13 +57,14 @@ class MicroBatchStreaming:
 
     ''' Control optimizer '''
     def set_loss(
-        self, loss_fn : nn.Module
+        self, loss_fn : nn.Module, normalize_factor : Union[int, float] = None
     ):
         mbs_loss = MBSLoss(
             loss_fn=loss_fn,
             mbs=self,
             mini_batch_size=self._mini_batch_size,
-            micro_batch_size=self._micro_batch_size
+            micro_batch_size=self._micro_batch_size,
+            normalize_factor=normalize_factor
         )
         self._losses.append( mbs_loss )
         return mbs_loss
