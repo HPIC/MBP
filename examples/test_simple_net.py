@@ -101,18 +101,15 @@ if __name__ ==  '__main__':
 
     model = Net().to(dev)
     criterion = nn.CrossEntropyLoss().to(dev)
-    print(type(criterion))
     optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 
     mbs = MicroBatchStreaming()
     train_dataloader = mbs.set_dataloader(train_dataloader, micro_batch_size=16)
-    test_dataloader = mbs.set_dataloader(test_dataloader, micro_batch_size=16)
     optimizer = mbs.set_optimizer(optimizer)
     criterion = mbs.set_loss(criterion)
 
     print("-----")
     print("MBS train dataloader size :", train_dataloader.micro_len())
-    print("MBS test dataloader size :", test_dataloader.micro_len())
     print("-----")
 
     cur = 0
@@ -133,5 +130,5 @@ if __name__ ==  '__main__':
         # print(idx+1, loss.item(), image.size(), label.size())
 
             ''' Check update error '''
-            print(f"{epoch+1}, loss : {loss.detach().item()}")
-        # print(f"{epoch+1}, loss : {loss.detach().item()}")
+            print(f"{epoch+1}, loss : {loss.detach().item()}", end="\r")
+        print(f"{epoch+1}, [{idx+1}] loss : {loss.detach().item()}")
