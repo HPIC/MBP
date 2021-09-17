@@ -65,13 +65,3 @@ class CarvanaTest(Dataset):
             image = self.image_transform(image)
 
         return image
-
-if __name__ == '__main__':
-
-    print("test: ",len(CarvanaTest(root='./data', train=False)))
-    print("train: ", len(CarvanaTrain(root='./data', train=True)))
-    i = 0
-    for x in CarvanaTest(root='./data', train=False):
-        if i == 5: break
-        print(x)
-        i+=1
