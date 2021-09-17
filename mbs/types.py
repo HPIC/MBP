@@ -1,31 +1,23 @@
 from typing import List, Tuple, Union
+from torch import Tensor
 
 from torch.optim.optimizer import Optimizer
-from mbs.wrap_dataloader import MBSDataloader
-from mbs.wrap_optimizer import MBSOptimizer
-from mbs.wrap_loss import MBSLoss
+from torch.nn import Module
 
 __all__ = [
-    "TorchSingleOptimizer",
-    "TorchMultiOptimizer",
-    "TorchOptimizer",
-    "MBSSingleOptimizer",
-    "MBSOptimizers",
-    "MBSDataloaders",
-    "MBSLosses",
+    "TorchLossType",
+    "MultiTensors",
+    "ChunkTensor",
+    "ChunkTensors",
+    "ChunkTensororTensors",
 ]
 
-# PyTorch Optimizer related custom types
-TorchSingleOptimizer = Optimizer
-TorchMultiOptimizer = List[ Optimizer ]
-TorchOptimizer = Union[ TorchSingleOptimizer, TorchMultiOptimizer ]
+# PyTorch Loss-type Define
+TorchLossType = Module
 
-# MBS optimizer related custom types
-MBSSingleOptimizer = MBSOptimizer
-MBSOptimizers = List[ MBSOptimizer ]
+# PyTorch Tensors-type Define
+MultiTensors = Tuple[ Tensor ]
+ChunkTensor = MultiTensors
+ChunkTensors = List[ MultiTensors ]
+ChunkTensororTensors = Union[ ChunkTensor, ChunkTensors ]
 
-# MBS dataloaders related custom types
-MBSDataloaders = Union[ MBSDataloader, List[MBSDataloader] ]
-
-# MBS loss function related cutom types
-MBSLosses = Union[ MBSLoss, List[MBSLoss] ]
