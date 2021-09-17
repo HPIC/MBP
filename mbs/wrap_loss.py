@@ -15,7 +15,7 @@ class MBSLoss(Module):
         micro_batch_size : int,
         normalize_factor : float = 1
     ) -> None:
-        '''
+        r'''
             MBSLoss, only this calss inherits torch.nn.Module class.
 
             Args:

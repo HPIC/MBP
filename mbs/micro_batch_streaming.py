@@ -5,9 +5,7 @@ import torch.nn as nn
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
-from mbs.types import (
-    TorchLossType,
-)
+from mbs.types import TorchLossType
 
 from mbs.wrap_dataloader import MBSDataloader
 from mbs.wrap_loss import MBSLoss

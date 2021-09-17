@@ -4,7 +4,7 @@ class MBSOptimizer:
     def __init__(
         self, optimizer : Optimizer, mbs
     ) -> None:
-        '''
+        r'''
             MBSOptimizer, like OOP interface.
             does not inherit torch.optim.Optimizer.
 

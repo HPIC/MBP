@@ -1,7 +1,6 @@
 from typing import List, Tuple, Union
 from torch import Tensor
 
-from torch.optim.optimizer import Optimizer
 from torch.nn import Module
 
 __all__ = [
