@@ -57,6 +57,7 @@ class MicroBatchStreaming:
         self._losses : MBSLosses = []
         self._mini_batch_size : int = None
         self._micro_batch_size : int = None
+        self._num_chunk : int = None
 
     def set_dataloader(
         self, dataloader : DataLoader, micro_batch_size : int = 4
@@ -126,7 +127,7 @@ class MicroBatchStreaming:
         return mbs_optimizer
 
     def set_loss(
-        self, loss_fn : TorchLossType, normalize_factor : float = None
+        self, loss_fn : TorchLossType, normalize_factor : float = 1.0
     ) -> MBSLoss:
         r'''
             Wrap PyTorch loss function to MBS loss function,
@@ -159,7 +160,7 @@ class MicroBatchStreaming:
             raise TypeError(
                 '[MBS error] loss function type does not match, please check loss function format.'
             )
-        if not isinstance(normalize_factor, float) and normalize_factor != None:
+        if not isinstance(normalize_factor, float):
             raise TypeError(
                 '[MBS error] normalize_factor type does not match, please check normalize factor format'
             )
@@ -167,8 +168,6 @@ class MicroBatchStreaming:
         mbs_loss = MBSLoss(
             loss_fn=loss_fn,
             mbs=self,
-            mini_batch_size=self._mini_batch_size,
-            micro_batch_size=self._micro_batch_size,
             normalize_factor=normalize_factor
         )
         self._losses.append( mbs_loss )

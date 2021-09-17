@@ -106,6 +106,7 @@ class MBSDataloader:
     def __iter__(self):
         for data in self._dataloader:
             micro_dataset, num_micro_batch = self._chunk(data)
+            self._comm_mbs._num_chunk = num_micro_batch
             for idx in range(num_micro_batch):
                 self._comm_mbs._zero_grad_timing = idx == 0
                 self._comm_mbs._update_timing = (idx + 1) == num_micro_batch
