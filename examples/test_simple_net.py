@@ -130,5 +130,5 @@ if __name__ ==  '__main__':
         # print(idx+1, loss.item(), image.size(), label.size())
 
             ''' Check update error '''
-            print(f"{epoch+1}, loss : {loss.detach().item()}", end="\r")
+            print(f"{epoch+1}, loss : {loss.detach().item()}, {image.size()}, {label.size()}", end="\r")
         print(f"{epoch+1}, [{idx+1}] loss : {loss.detach().item()}")
