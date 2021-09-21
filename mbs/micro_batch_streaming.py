@@ -10,6 +10,7 @@ from mbs.types import TorchLossType
 from mbs.wrap_dataloader import MBSDataloader
 from mbs.wrap_loss import MBSLoss
 from mbs.wrap_optimizer import MBSOptimizer
+from mbs.wrap_model import MBSBatchNorm
 
 MBSOptimizers = Union[ MBSOptimizer, List[MBSOptimizer] ]
 MBSDataloaders = Union[ MBSDataloader, List[MBSDataloader] ]
@@ -173,3 +174,8 @@ class MicroBatchStreaming:
         self._losses.append( mbs_loss )
         return mbs_loss
 
+    def set_batch_norm(
+        self, module : Union[nn.Module, nn.Sequential]
+    ):
+        mbs_model = MBSBatchNorm.wrap_batch_norm(module, self)
+        return mbs_model
