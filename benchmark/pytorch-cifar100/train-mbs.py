@@ -88,13 +88,14 @@ def train(epoch):
             if 'bias' in name:
                 writer.add_scalar('LastLayerGradients/grad_norm2_bias', para.grad.norm(), n_iter)
 
-        print('Training Epoch: {epoch} [{trained_samples}/{total_samples}]\tLoss: {:0.4f}\tLR: {:0.6f}'.format(
-            loss.item(),
-            mbs_optimizer.param_groups[0]['lr'],
-            epoch=epoch,
-            trained_samples=batch_index * micro_batch_size + len(images),
-            total_samples=cifar100_training_loader_dataset_size
-        ))
+        if (batch_size + 1) % (batch_size // micro_batch_size) == 0:
+            print('Training Epoch: {epoch} [{trained_samples}/{total_samples}]\tLoss: {:0.4f}\tLR: {:0.6f}'.format(
+                loss.item(),
+                mbs_optimizer.optimizer.param_groups[0]['lr'],
+                epoch=epoch,
+                trained_samples=batch_index * micro_batch_size + len(images),
+                total_samples=cifar100_training_loader_dataset_size
+            ))
 
         #update training loss for each iteration
         writer.add_scalar('Train/loss', loss.item(), n_iter)
