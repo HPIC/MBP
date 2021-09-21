@@ -6,6 +6,9 @@
 author baiyu
 """
 
+from mbs.wrap_dataloader import MBSDataloader
+from mbs.wrap_loss import MBSLoss
+from mbs.wrap_optimizer import MBSOptimizer
 import os
 from pickle import FALSE
 import sys
@@ -17,6 +20,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.nn.modules.module import Module
 import torch.optim as optim
 import torchvision
 from torchvision.datasets import cifar
@@ -44,15 +48,19 @@ import random
 #     return train_dataloader, valid_dataloader, optim_list
 
 def _init_microbatch_stream(
-    train_dataloader: DataLoader, valid_dataloader: DataLoader, optim_list: List[optim.Optimizer], micro_batch_size: int
+    train_dataloader: DataLoader,
+    valid_dataloader: DataLoader,
+    optim: optim.Optimizer,
+    loss_fn: Module,
+    micro_batch_size: int
 ) -> List[optim.Optimizer]:
     # Define MicroBatchStreaming
     mbs = MicroBatchStreaming()
     train_dataloader = mbs.set_dataloader(train_dataloader, micro_batch_size)
     valid_dataloader = valid_dataloader
-    for optim in optim_list:
-        optim = mbs.set_optimizer(optim)
-    return train_dataloader, valid_dataloader, optim_list[0]
+    loss_fn = mbs.set_loss(loss_fn)
+    optim = mbs.set_optimizer(optim)
+    return train_dataloader, valid_dataloader, optim, loss_fn
 
 
 def train(epoch):
@@ -67,7 +75,7 @@ def train(epoch):
 
         mbs_optimizer.zero_grad()
         outputs = net(images)
-        loss = loss_function(outputs, labels)
+        loss : torch.Tensor = mbs_loss(outputs, labels)
         loss.backward()
         mbs_optimizer.step()
 
@@ -202,14 +210,18 @@ if __name__ == '__main__':
 
     #add mbs capability
     micro_batch_size = args.mb
-    optim_list = [optimizer]
-    cifar100_training_loader, cifar100_test_loader, mbs_optimizer = _init_microbatch_stream(cifar100_training_loader, cifar100_test_loader, optim_list, micro_batch_size)
+    cifar100_training_loader, cifar100_test_loader, mbs_optimizer, mbs_loss = _init_microbatch_stream(
+        cifar100_training_loader, cifar100_test_loader, optimizer, loss_function, micro_batch_size)
+
+    cifar100_training_loader : MBSDataloader
+    mbs_optimizer : MBSOptimizer
+    mbs_loss : MBSLoss
 
     print(len(cifar100_training_loader))
 
-    train_scheduler = optim.lr_scheduler.MultiStepLR(mbs_optimizer, milestones=settings.MILESTONES, gamma=0.2) #learning rate decay
+    train_scheduler = optim.lr_scheduler.MultiStepLR(mbs_optimizer.optimizer, milestones=settings.MILESTONES, gamma=0.2) #learning rate decay
     iter_per_epoch = cifar100_training_loader_dataset_size/micro_batch_size
-    warmup_scheduler = WarmUpLR(mbs_optimizer, iter_per_epoch * args.warm)
+    warmup_scheduler = WarmUpLR(mbs_optimizer.optimizer, iter_per_epoch * args.warm)
 
     if args.resume:
         recent_folder = most_recent_folder(os.path.join(settings.CHECKPOINT_PATH, args.net), fmt=settings.DATE_FORMAT)
