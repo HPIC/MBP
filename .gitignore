@@ -691,4 +691,6 @@ benchmark/test.py
 examples/MNIST
 *.csv
 benchmark/*/runs
-benchmark/pytorch-cifar10*/checkpoint
+benchmark/*/checkpoint
+benchmark/*/runs-mbs
+benchmark/*/runs-naive

@@ -19,7 +19,7 @@ CIFAR100_TRAIN_STD = (0.2673342858792401, 0.2564384629170883, 0.2761504713256840
 CHECKPOINT_PATH = 'checkpoint'
 
 #total training epoches
-EPOCH = 150
+EPOCH = 100
 MILESTONES = [40, 80, 120]
 
 #initial learning rate
@@ -30,7 +30,8 @@ DATE_FORMAT = '%A_%d_%B_%Y_%Hh_%Mm_%Ss'
 TIME_NOW = datetime.now().strftime(DATE_FORMAT)
 
 #tensorboard log dir
-LOG_DIR = 'runs'
+LOG_DIR_NAIVE = 'runs-naive'
+LOG_DIR_MBS = 'runs-mbs'
 
 #save weights file per SAVE_EPOCH epoch
 SAVE_EPOCH = 10

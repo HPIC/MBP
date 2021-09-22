@@ -124,14 +124,16 @@ if __name__ == '__main__':
     parser.add_argument('-net', type=str, required=True, help='net type')
     parser.add_argument('-gpu', action='store_true', default=False, help='use gpu or not')
     parser.add_argument('-gpu_device', type=int, default=0, help='select gpu device')
-    parser.add_argument('-b', type=int, default=128, help='batch size for dataloader')
+    parser.add_argument('-b', type=int, default=256, help='batch size for dataloader')
     parser.add_argument('-warm', type=int, default=0, help='warm up training phase')
-    parser.add_argument('-lr', type=float, default=0.1, help='initial learning rate')
+    parser.add_argument('-lr', type=float, default=0.05, help='initial learning rate')
     parser.add_argument('-resume', action='store_true', default=False, help='resume training')
+    parser.add_argument('-seed', type=int, default=42, help='use seed as torch random seed')
+    parser.add_argument('-stepLR', action='store_true', default=False, help='use stepLR')
     args = parser.parse_args()
     _device = 'cuda:' + str(args.gpu_device)
 
-    random_seed = 42
+    random_seed = args.seed
 
     torch.manual_seed(random_seed)
     torch.cuda.manual_seed(random_seed)
@@ -164,9 +166,10 @@ if __name__ == '__main__':
         pin_memory=True
     )
 
-    loss_function = nn.CrossEntropyLoss()
+    loss_function = nn.CrossEntropyLoss().cuda(device)
     optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
-    train_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=settings.MILESTONES, gamma=0.2) #learning rate decay
+    if args.stepLR:
+        train_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=settings.MILESTONES, gamma=0.2) #learning rate decay
     iter_per_epoch = len(cifar100_training_loader)
     warmup_scheduler = WarmUpLR(optimizer, iter_per_epoch * args.warm)
 
@@ -181,13 +184,13 @@ if __name__ == '__main__':
         checkpoint_path = os.path.join(settings.CHECKPOINT_PATH, args.net, settings.TIME_NOW)
 
     #use tensorboard
-    if not os.path.exists(settings.LOG_DIR):
-        os.mkdir(settings.LOG_DIR)
+    if not os.path.exists(settings.LOG_DIR_NAIVE):
+        os.mkdir(settings.LOG_DIR_NAIVE)
 
     #since tensorboard can't overwrite old values
     #so the only way is to create a new tensorboard log
     writer = SummaryWriter(log_dir=os.path.join(
-            settings.LOG_DIR, args.net, settings.TIME_NOW))
+            settings.LOG_DIR_NAIVE, args.net, settings.TIME_NOW))
     input_tensor = torch.Tensor(1, 3, 32, 32)
     if args.gpu:
         input_tensor = input_tensor.cuda(device)
@@ -220,8 +223,9 @@ if __name__ == '__main__':
 
 
     for epoch in range(1, settings.EPOCH + 1):
-        if epoch > args.warm:
-            train_scheduler.step(epoch)
+        if args.stepLR:
+            if epoch > args.warm:
+                train_scheduler.step(epoch)
 
         if args.resume:
             if epoch <= resume_epoch:
