@@ -82,3 +82,6 @@ class UNet(nn.Module):
 
 def unet_1156():
     return UNet(in_channels=1, out_channels=1, depth=5, cf=6)
+
+def unet_3156():
+    return UNet(in_channels=3, out_channels=1, depth=5, cf=6)
