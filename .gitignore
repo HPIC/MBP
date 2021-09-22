@@ -678,7 +678,7 @@ tags
 
 ## benchmark datasets
 benchmark/*/dataset/*
-benchmark/*/loss/*
+benchmark/*/loss/*.json
 benchmark/*/parameters/*
 
 ## benchmark partial result
