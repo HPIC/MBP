@@ -1,7 +1,6 @@
 from typing import List, Union
 
-import torch
-import torch.nn as nn
+from torch.nn import Module
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
@@ -30,13 +29,18 @@ class MicroBatchStreaming:
             (MBSLoss only inherits torch.nn.Module class, because )
 
         Example::
-            >>> dataloader = torch.utils.data.Dataloader(...)
-            >>> criterion = nn.CrossEntropyLoss(...)
-            >>> optimizer = torch.optim.SGD(...)
-            >>>     ...
             >>> mbs = MicroBatchStream()
+            >>>     ...
+            >>> model = YourModel()
+            >>> model : torch.nn.Module = mbs.set_batch_norm( model )
+            >>>     ...
+            >>> dataloader = torch.utils.data.Dataloader(...)
             >>> dataloader : MBSDataloader = mbs.set_dataloader( dataloader )
+            >>>     ...
+            >>> criterion = nn.CrossEntropyLoss(...)
             >>> criterion : MBSLoss = mbs.set_loss( criterion )
+            >>>     ...
+            >>> optimizer = torch.optim.SGD(...)
             >>> optimizer : MBSOptimizer = mbs.set_optimizer( optimizer )
             >>>     ...
             >>> for idx, (input, target) in enumerate(dataloader):
@@ -175,7 +179,28 @@ class MicroBatchStreaming:
         return mbs_loss
 
     def set_batch_norm(
-        self, module : Union[nn.Module, nn.Sequential]
+        self, module : Module
     ):
+        r'''
+            wrap PyTorch::BatchNorm to MBS::BatchNorm.
+            it means only replace PyTorch::BatchNorm to MBS::BatchNorm.
+
+            Args:
+                module : Pytorch::Module
+
+            Returns:
+                module_output : Pytorch::Module
+                    but Pytorch::BatchNorm layers are replaced MBS::BatchNorm.
+
+            Example::
+                >>> model = net()
+                >>> mbs = MicroBatchStream()
+                >>> model = mbs.set_batch_norm( model )
+        '''
+        if not isinstance(module, Module):
+            raise TypeError(
+                '[MBS error] input module type does not match, please check input module type.'
+            )
         mbs_model = MBSBatchNorm.wrap_batch_norm(module, self)
         return mbs_model
+
