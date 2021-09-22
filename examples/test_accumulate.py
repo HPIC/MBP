@@ -141,6 +141,7 @@ if __name__ ==  '__main__':
             momentum=0.9
         )
 
+        # baseline_model.train()
         for idx, (image, label) in enumerate(train_dataloader):
             optimizer_base.zero_grad()
 
@@ -157,16 +158,22 @@ if __name__ ==  '__main__':
             #     print(para.data)
             # print("\n\n\n\n", '='*20, '\n\n\n\n')
 
+            for name, buf in baseline_model.named_buffers():
+                if 'running' in name:
+                    print(name, '\n', buf)
+
+            print("\n\n\n")
+
             optimizer_base.step()
 
             if idx + 1 == 20:
-                for name, para in baseline_model.named_parameters():
-                    if 'bn' in name:
-                        print(name, '*'*30)
-                        print(para.data)
-                print("\n\n\n")
-                for name, buf in baseline_model.named_buffers():
-                    print(name, '\n', buf)
+                # for name, para in baseline_model.named_parameters():
+                #     if 'bn' in name:
+                #         print(name, '*'*30)
+                #         print(para.data)
+                # print("\n\n\n")
+                # for name, buf in baseline_model.named_buffers():
+                #     print(name, '\n', buf)
                 break
     elif args.mode == 1: # mbs-like
         mode = 'mbs-like'
@@ -192,18 +199,21 @@ if __name__ ==  '__main__':
 
             if ( (idx + 1) % (batch_size // 16) == 0 ):
                 count += 1
-                print(count)
-                for name, para in mbs_model.named_parameters():
-                    print(name, '*'*30)
-                    print(para.data)
-                print("\n\n\n\n", '='*20, '\n\n\n\n')
+                for name, buf in mbs_model.named_buffers():
+                    if 'running' in name:
+                        print(name, '\n', buf)
+                print("\n\n\n")
                 optimizer_mbs.step()
                 optimizer_mbs.zero_grad()
-            if count == 10:
+            if count == 20:
                 for name, para in mbs_model.named_parameters():
-                    print(name, '*'*30)
-                    print(para.data)
-                print("\n\n\n\n", '='*20, '\n\n\n\n')
+                    if 'bn' in name:
+                        print(name, '*'*30)
+                        print(para.data)
+                print("\n\n\n")
+                for name, buf in mbs_model.named_buffers():
+                    if 'running' in name:
+                        print(name, '\n', buf)
                 break
     elif args.mode == 2: # mbs
         mode = 'mbs'
@@ -225,7 +235,8 @@ if __name__ ==  '__main__':
         optimizer_mbs = mbs.set_optimizer(optimizer_mbs)
 
         count = 0
-        
+
+        # mbs_model.train()
         for idx, (image, label) in enumerate(mbs_train_dataloader):
             optimizer_mbs.zero_grad()
 
@@ -245,14 +256,18 @@ if __name__ ==  '__main__':
                 #     print(name, '*'*30)
                 #     print(para.data)
                 # print("\n\n\n\n", '='*20, '\n\n\n\n')
-            if count == 20:
-                for name, para in mbs_model.named_parameters():
-                    if 'bn' in name:
-                        print(name, '*'*30)
-                        print(para.data)
-                print("\n\n\n")
                 for name, buf in mbs_model.named_buffers():
                     if 'running' in name:
+                        print(name, '\n', buf)
+                print("\n\n\n")
+            if count == 20:
+                # for name, para in mbs_model.named_parameters():
+                #     if 'bn' in name:
+                #         print(name, '*'*30)
+                #         print(para.data)
+                # print("\n\n\n")
+                for name, buf in mbs_model.named_buffers():
+                    if name in ['running_mean', 'running_var']:
                         print(name, '\n', buf)
                 break
 
