@@ -9,8 +9,8 @@ from torch.nn import Module
 class MBSLoss(Module):
     def __init__(
         self,
+        mbs_block,
         loss_fn : TorchLossType,
-        mbs,
         normalize_factor : float = 1.0
     ) -> None:
         r'''
@@ -26,7 +26,7 @@ class MBSLoss(Module):
                     - 1 (low impact of micro-batch loss values to mini-batch loss value)
         '''
         super(MBSLoss, self).__init__()
-        self._comm_mbs = mbs
+        self.mbs_block = mbs_block
         self._loss_fn = loss_fn
         self._normalize_factor = normalize_factor
 
@@ -43,12 +43,20 @@ class MBSLoss(Module):
                 loss_value : torch.Tensor-type,
                     return Tensor to calculate gradients.
         '''
+        # Calculate streaming step
+        streaming_step = self.mbs_block.remaining_step
+
+        # print(
+        #     f"{self.mbs_block._cur_batch_step}/{self.mbs_block.batch_iter}",
+        #     f"{self.mbs_block.cur_batch_input_size}",
+        #     f"{self.mbs_block.update_timing}"
+        # )
+
         # Calculate loss value.
         loss_value = self._loss_fn(input, target)
 
         # Calculate degree of normalization for normalizing loss.
         rate = self._normalize_factor if normalize_rate == None else normalize_rate
-        streaming_step = self._comm_mbs._num_chunk
         degree_of_normalization = streaming_step * rate
 
         # Apply.

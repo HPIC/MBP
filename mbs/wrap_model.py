@@ -7,9 +7,9 @@ from torch.nn.modules.batchnorm import _BatchNorm
 
 class MBSModel:
     def __init__(
-        self, module : Union[Module, Sequential], mbs
+        self, module : Union[Module, Sequential], mbs_block
     ) -> None:
-        self._comm_mbs = mbs
+        self.mbs_block = mbs_block
 
 
 class MBSBatchNorm(_BatchNorm):
@@ -38,7 +38,7 @@ class MBSBatchNorm(_BatchNorm):
     '''
     def __init__(
         self, num_features, eps=0.00001, momentum=0.1, affine=True,
-        mbs = None,
+        mbs_block = None,
     ) -> None:
         super().__init__(
             num_features,
@@ -50,7 +50,7 @@ class MBSBatchNorm(_BatchNorm):
         self.register_buffer('accum_sum', torch.zeros_like(self.running_mean))
         self.register_buffer('accum_sum_squares', torch.zeros_like(self.running_var))
 
-        self._comm_mbs = mbs
+        self.mbs_block = mbs_block
         self.accum_size = 0
 
     def _check_input_dim(self, input: Tensor):
@@ -117,7 +117,7 @@ class MBSBatchNorm(_BatchNorm):
         # Training mode
         self._accumulate(input)
 
-        if self._comm_mbs._update_timing:
+        if self.mbs_block.update_timing:
             self._check_input_dim(input)
             self._normalize()
 

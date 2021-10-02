@@ -1,8 +1,9 @@
+import torch
 from torch.optim.optimizer import Optimizer
 
 class MBSOptimizer:
     def __init__(
-        self, optimizer : Optimizer, mbs
+        self, optimizer : Optimizer, mbs_block
     ) -> None:
         r'''
             MBSOptimizer, like OOP interface.
@@ -24,15 +25,27 @@ class MBSOptimizer:
                 mbs : Micro Batch Streaming object
                     this is to share data between MBS subclass like MBSLoss, MBSDataloader, MBSOptimizer.
         '''
-        self._comm_mbs = mbs
+        self.mbs_block = mbs_block
         self.optimizer = optimizer
 
     def zero_grad(self, _epoch : int = None):
-        if self._comm_mbs._zero_grad_timing:
+        if self.mbs_block.zero_grad_timing:
             # print(f'[{_epoch}] set zero gradients.')
             self.optimizer.zero_grad()
 
     def step(self, _epoch : int = None):
-        if self._comm_mbs._update_timing:
+        if self.mbs_block.update_timing:
             # print(f'[{_epoch}] update parameters.')
             self.optimizer.step()
+
+    @classmethod
+    def wrap_optimizer(
+        cls, optimizer: Optimizer, mbs_block
+    ):
+        if not isinstance(optimizer, Optimizer):
+            raise TypeError(f'Recheck optimizer, input optimizer type is {type(optimizer)}.')
+
+        mbs_optimizer : MBSOptimizer = MBSOptimizer(
+            optimizer, mbs_block
+        )
+        return mbs_optimizer

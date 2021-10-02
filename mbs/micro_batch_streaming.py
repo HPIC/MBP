@@ -1,12 +1,15 @@
 from typing import List, Union
+import torch
 
 from torch.nn import Module
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
+import math
+
 from mbs.types import TorchLossType
 
-from mbs.wrap_dataloader import MBSDataloader
+from mbs.wrap_dataloader import MBSDataloader, TestMBSDatalaoder
 from mbs.wrap_loss import MBSLoss
 from mbs.wrap_optimizer import MBSOptimizer
 from mbs.wrap_model import MBSBatchNorm
@@ -15,7 +18,53 @@ MBSOptimizers = Union[ MBSOptimizer, List[MBSOptimizer] ]
 MBSDataloaders = Union[ MBSDataloader, List[MBSDataloader] ]
 MBSLosses = Union[ MBSLoss, List[MBSLoss] ]
 
-class MicroBatchStreaming:
+
+class _MBSBlock:
+    def __init__(self) -> None:
+        self.zero_grad_timing = False
+        self.update_timing = False
+        self.mini_batch_size : int = None
+        self.micro_batch_size : int = None
+
+        self.current_iter: int = 0
+        self.chunks: int = 0
+        self.dataset_size: int = 0
+        self.total_iter: int = 0
+        self.remaining_step: int = 0
+
+        # check mini-batch iteration
+        self.mini_iter: int = 0
+        self.total_mini_iter: int = 0
+        self.temp: int = 0
+
+    def update(self):
+        chunks = self.chunks
+
+        if self.current_iter % chunks == 1:
+            self.mini_iter += 1
+            self.zero_grad_timing = True
+            self.update_timing = False
+        elif self.current_iter % chunks == 0 or self.current_iter == self.total_iter:
+            self.zero_grad_timing = False
+            self.update_timing = True
+        else:
+            self.zero_grad_timing = False
+            self.update_timing = False
+
+        if self.mini_iter == self.total_mini_iter:
+            self.temp = self.current_iter if self.temp == 0 else self.temp
+            self.remaining_step = self.total_iter - self.temp + 1
+        else:
+            self.remaining_step = chunks
+
+        # print(
+        #     self.mini_iter, self.total_mini_iter,
+        #     self.current_iter, self.total_iter, self.remaining_step,
+        #     self.zero_grad_timing, self.update_timing, " "*10,
+        # )
+
+
+class MicroBatchStreaming(_MBSBlock):
     r'''
         Micro Batch Stream object
         - It is library(or framework) for training models with a large dataset on small GPU.
@@ -55,18 +104,14 @@ class MicroBatchStreaming:
         r'''
             Initializes MicroBatchStreaming state.
         '''
-        self._zero_grad_timing : bool = False
-        self._update_timing : bool = False
+        super(MicroBatchStreaming, self).__init__()
         self._optimizers : MBSOptimizers = []
         self._dataloaders : MBSDataloaders = []
         self._losses : MBSLosses = []
-        self._mini_batch_size : int = None
-        self._micro_batch_size : int = None
-        self._num_chunk : int = None
 
     def set_dataloader(
-        self, dataloader : DataLoader, micro_batch_size : int = 4
-    ) -> MBSDataloader:
+        self, dataloader : DataLoader, device: torch.device, micro_batch_size : int = 4, shuffle: bool = True,
+    ) -> TestMBSDatalaoder:
         r'''
             Wrap PyTorch dataloader to MBS dataloader,
             MBS dataloader returns micro-batch-based dataset to user model when user's model is training.
@@ -88,19 +133,25 @@ class MicroBatchStreaming:
                 >>>     input = input.to(device)
                 >>>         ...
         '''
-        if not isinstance(dataloader, DataLoader):
-            raise TypeError('[MBS Error] input(optimizer) type does not match, please check input(optmizer) type.')
-        if not isinstance(micro_batch_size, int):
-            raise TypeError('[MBS Error] input(micro_batch_size) type does not match, please check input(micro_batch_size) type.')
-
-        self._mini_batch_size = dataloader.batch_size
-        self._micro_batch_size = micro_batch_size
-        mbs_dataloader = MBSDataloader(
+        self.mini_batch_size = dataloader.batch_size
+        self.micro_batch_size = micro_batch_size
+        self.dataset_size = dataloader.dataset.__len__()
+        self.total_iter = math.ceil(self.dataset_size / self.micro_batch_size)
+        self.total_mini_iter = dataloader.__len__()
+        self.chunks = math.ceil( self.mini_batch_size / self.micro_batch_size )
+        # mbs_dataloader = MBSDataloader(
+        #     dataloader=dataloader,
+        #     micro_batch_size=micro_batch_size,
+        #     mbs=self
+        # )
+        # self._dataloaders.append( mbs_dataloader )
+        mbs_dataloader = TestMBSDatalaoder.wrap_dataloader(
+            mbs_block=self,
             dataloader=dataloader,
-            micro_batch_size=micro_batch_size,
-            mbs=self
+            shuffle=shuffle,
+            device=device,
+            micro_batch_size=micro_batch_size
         )
-        self._dataloaders.append( mbs_dataloader )
         return mbs_dataloader
 
     def set_optimizer(
@@ -126,7 +177,7 @@ class MicroBatchStreaming:
 
         mbs_optimizer = MBSOptimizer(
             optimizer,
-            mbs=self
+            mbs_block=self
         )
         self._optimizers.append( mbs_optimizer )
         return mbs_optimizer
@@ -171,8 +222,8 @@ class MicroBatchStreaming:
             )
 
         mbs_loss = MBSLoss(
+            mbs_block=self,
             loss_fn=loss_fn,
-            mbs=self,
             normalize_factor=normalize_factor
         )
         self._losses.append( mbs_loss )
