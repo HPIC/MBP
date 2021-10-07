@@ -70,7 +70,7 @@ def _plot_json(args):
     plt.legend()
     plt.title(f'{args.name} train loss')
 
-    plt.subplot(312)
+    plt.subplot(321)
     plt.plot(target_top1,
         label='{name} (max : {num:.2f})'.format(name=args.target_name, num=target_max_top1 ),
         color='b'
@@ -85,7 +85,7 @@ def _plot_json(args):
     plt.legend()
     plt.title(f'{args.name} Top-1 accuracy')
 
-    plt.subplot(313)
+    plt.subplot(331)
     plt.plot(target_top5,
         label='{name} (max : {num:.2f})'.format(name=args.target_name, num=target_max_top5 ),
         color='b'

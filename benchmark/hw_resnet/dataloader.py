@@ -54,8 +54,9 @@ def rtn_cifar10(path, config, args, is_train=True):
         train=is_train,
         transform=transforms.Compose(
             [
+                transforms.Resize( (config.data.dataset.train.image_size, config.data.dataset.train.image_size) ),
                 transforms.RandomHorizontalFlip(),
-                transforms.RandomCrop(32, 4),
+                transforms.RandomCrop(config.data.dataset.train.image_size, 4),
                 transforms.ToTensor(),
                 normalize
             ]
@@ -84,8 +85,9 @@ def rtn_cifar100(path, config, args, is_train=True):
             train=is_train,
             transform=transforms.Compose(
                 [
+                    transforms.Resize( (config.data.dataset.train.image_size, config.data.dataset.train.image_size) ),
                     transforms.RandomHorizontalFlip(),
-                    transforms.RandomCrop(32, 4),
+                    transforms.RandomCrop(config.data.dataset.train.image_size, 4),
                     transforms.ToTensor(),
                     normalize
                 ]

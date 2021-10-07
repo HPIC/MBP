@@ -1,4 +1,4 @@
-import itertools
+import wandb
 import math, random
 import json
 import time
@@ -80,12 +80,29 @@ class XcepTrainer:
             return resnet152(num_classes)
 
     def _print_learning_info(self):
+        print(f'WanDB? {self.args.wandb}')
         print(f"Random Seed : {self.args.random_seed}")
         print(f"Epoch : {self.config.data.train.epoch}")
         print(f"Batch size : {self.config.data.dataset.train.batch_size}")
+        print(f"Image size : {self.config.data.dataset.train.image_size}")
         print(f"num of classes : {self.config.data.dataset.train.num_classes}")
 
     def train(self) -> None:
+        # wandb
+        if self.args.wandb:
+            name = None
+            name = f'resnet_{self.args.version}_'
+            name += f'batch_{self.config.data.dataset.train.batch_size}_'
+            name += f'image_{self.config.data.dataset.train.image_size}'
+            if self.config.data.microbatchstream.enable:
+                name += f'_mbs_{self.config.data.microbatchstream.micro_batch_size}'
+            name += f'_cifar{self.config.data.dataset.train.num_classes}'
+
+            wandb.init(
+                project='mbs',
+                entity='xypiao97',
+                name=f'{name}')
+
         # Setting Random seed.
         random_seed = self.args.random_seed
         self._print_learning_info()
@@ -195,10 +212,10 @@ class XcepTrainer:
 
         losses = 0
 
-        # if self.config.data.microbatchstream.enable:
-        #     dataloader_len = dataloader.micro_len()
-        # else:
-        dataloader_len = len(dataloader)
+        if self.config.data.microbatchstream.enable:
+            dataloader_len = dataloader.micro_len()
+        else:
+            dataloader_len = len(dataloader)
 
         epoch_start = time.perf_counter()
         self.model.train()
@@ -228,6 +245,8 @@ class XcepTrainer:
             losses *= math.ceil(self.config.data.dataset.train.batch_size / self.config.data.microbatchstream.micro_batch_size) 
         losses /= idx
 
+        if self.args.wandb:
+            wandb.log( {'train loss': losses}, step=epoch )
         self._epoch_writer(
             epoch,
             self.config.data.train.epoch,
@@ -263,6 +282,9 @@ class XcepTrainer:
                     correct_k = correct5[:k].reshape(-1).float().sum(0, keepdim=True)
                 correct_top5 += correct_k.item()
 
+        if self.args.wandb:
+            wandb.log( {'top-1': 100 * ( correct_top1 / total )}, step=epoch )
+            wandb.log( {'top-5': 100 * ( correct_top5 / total )}, step=epoch )
         self.val_accuracy[epoch + 1] = {
             'top-1' : 100 * ( correct_top1 / total ),
             'top-5' : 100 * ( correct_top5 / total )

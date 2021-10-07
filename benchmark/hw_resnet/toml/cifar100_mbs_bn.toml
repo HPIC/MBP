@@ -20,8 +20,8 @@ epoch = 100
     type="cifar100"
     path="./dataset/"
     num_classes = 100
-    batch_size = 512
-    image_size = 32
+    batch_size = 128
+    image_size = 64
     num_worker = 16
 
   [dataset.test]
@@ -30,9 +30,10 @@ epoch = 100
     num_classes = 100
     batch_size = 64
     image_size = 256
+    num_worker = 16
 
 # Micro Batch Streaming
 [microbatchstream]
 enable = true
 batchnorm = true
-micro_batch_size = 64
+micro_batch_size = 32
