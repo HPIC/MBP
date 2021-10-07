@@ -4,7 +4,7 @@ title = "EfficientNet"
 [optimizer]
 lr = 0.1
 mometum = 0.9
-decay = 0.0005
+decay = 0.0001
 
 # Device Related Configurations
 [gpu]
@@ -12,7 +12,7 @@ device = 1
 
 # Train Related Configurations
 [train]
-epoch = 100
+epoch = 200
 
 # Dataset Related Configurations
 [dataset]

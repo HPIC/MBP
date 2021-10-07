@@ -47,6 +47,12 @@ class Runner:
                 default=False,
                 help="config file path (default: None)",
             ),
+            args_template(
+                ["-o", "--origin"],
+                type=bool,
+                default=False,
+                help="config file path (default: None)",
+            ),
         ]
 
         for arg in predefined_args:

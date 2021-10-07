@@ -12,7 +12,7 @@ device = 0
 
 # Train Related Configurations
 [train]
-epoch = 100
+epoch = 200
 
 # Dataset Related Configurations
 [dataset]
