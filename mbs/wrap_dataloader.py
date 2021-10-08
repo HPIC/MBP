@@ -200,7 +200,7 @@ class TestMBSDatalaoder(DataLoader):
     ):
         super(TestMBSDatalaoder, self).__init__(
             dataset, 
-            batch_size=micro_batch_size,
+            batch_size=batch_size,
             shuffle=shuffle,
             num_workers=num_workers, 
             pin_memory=pin_memory,
@@ -263,28 +263,42 @@ class _TestMBSBaseDataLoaderIter(_BaseDataLoaderIter):
         # self.batch_size = micro_batch_size
         self.mbs_block = mbs_block
         self.call_counter = 0
-        self.next_queue = Queue()
+        self.data = None
+        self.num = 0
 
     def __next__(self) -> Any:
         self._update()
         with torch.autograd.profiler.record_function(self._profile_name):
-            if self._sampler_iter is None:
-                self._reset()
-            data = self._next_data()
+            if (self.call_counter - 1) % self.mbs_block.chunks == 0:
+                if self._sampler_iter is None:
+                    self._reset()
+                self.data = self._next_data()
+                self.num = len(self.data)
 
-            self._num_yielded += 1
-            if self._dataset_kind == _DatasetKind.Iterable and \
-                    self._IterableDataset_len_called is not None and \
-                    self._num_yielded > self._IterableDataset_len_called:
-                warn_msg = ("Length of IterableDataset {} was reported to be {} (when accessing len(dataloader)), but {} "
-                            "samples have been fetched. ").format(self._dataset, self._IterableDataset_len_called,
-                                                                self._num_yielded)
-                if self._num_workers > 0:
-                    warn_msg += ("For multiprocessing data-loading, this could be caused by not properly configuring the "
-                                "IterableDataset replica at each worker. Please see "
-                                "https://pytorch.org/docs/stable/data.html#torch.utils.data.IterableDataset for examples.")
-                warnings.warn(warn_msg)
-            return data
+                self._num_yielded += 1
+                if self._dataset_kind == _DatasetKind.Iterable and \
+                        self._IterableDataset_len_called is not None and \
+                        self._num_yielded > self._IterableDataset_len_called:
+                    warn_msg = ("Length of IterableDataset {} was reported to be {} (when accessing len(dataloader)), but {} "
+                                "samples have been fetched. ").format(self._dataset, self._IterableDataset_len_called,
+                                                                    self._num_yielded)
+                    if self._num_workers > 0:
+                        warn_msg += ("For multiprocessing data-loading, this could be caused by not properly configuring the "
+                                    "IterableDataset replica at each worker. Please see "
+                                    "https://pytorch.org/docs/stable/data.html#torch.utils.data.IterableDataset for examples.")
+                    warnings.warn(warn_msg)
+
+            if self.data[0].size(0) != self.mbs_block.micro_batch_size:
+                chunks = math.ceil( self.data[0].size(0) / self.mbs_block.micro_batch_size )
+            else:
+                chunks = self.mbs_block.chunks
+
+            idx = (self.call_counter-1) % chunks
+
+            return [
+                self.data[i][idx * self.mbs_block.micro_batch_size: (idx+1) * self.mbs_block.micro_batch_size]
+                for i in range(self.num)
+            ]
 
     def _update(self):
         self.call_counter += 1
