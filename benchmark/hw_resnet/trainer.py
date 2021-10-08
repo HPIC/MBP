@@ -83,9 +83,15 @@ class XcepTrainer:
         print(f'WanDB? {self.args.wandb}')
         print(f"Random Seed : {self.args.random_seed}")
         print(f"Epoch : {self.config.data.train.epoch}")
+        print(f'---- dataloader ----')
         print(f"Batch size : {self.config.data.dataset.train.batch_size}")
         print(f"Image size : {self.config.data.dataset.train.image_size}")
+        print(f"shuffle : {self.config.data.dataset.train.shuffle}")
+        print(f"pin memory : {self.config.data.dataset.train.pin_memory}")
+        print(f"num workers : {self.config.data.dataset.train.num_worker}")
+        print(f'---- dataset ----')
         print(f"num of classes : {self.config.data.dataset.train.num_classes}")
+        print(f'---- Experiments ----')
 
     def train(self) -> None:
         # wandb
@@ -247,6 +253,7 @@ class XcepTrainer:
 
         if self.args.wandb:
             wandb.log( {'train loss': losses}, step=epoch )
+            wandb.log( {'epoch avg time': epoch_time}, step=epoch)
         self._epoch_writer(
             epoch,
             self.config.data.train.epoch,
