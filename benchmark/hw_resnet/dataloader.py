@@ -32,15 +32,8 @@ def rtn_imagenet( path, config, args, is_train: bool = True):
             ]
         )
     )
-    dataloader = DataLoader(
-        dataset,
-        batch_size=config.data.dataset.train.batch_size,
-        shuffle=True,
-        num_workers=config.data.dataset.train.num_worker,
-        pin_memory=True,
-    )
 
-    return dataloader
+    return dataset
 
 
 def rtn_cifar10(path, config, args, is_train=True):
@@ -62,15 +55,8 @@ def rtn_cifar10(path, config, args, is_train=True):
             ]
         )
     )
-    dataloader = DataLoader(
-        dataset,
-        batch_size=config.data.dataset.train.batch_size,
-        num_workers=config.data.dataset.train.num_worker,
-        shuffle=True,
-        pin_memory=True,
-    )
 
-    return dataloader
+    return dataset
 
 
 def rtn_cifar100(path, config, args, is_train=True):
@@ -78,46 +64,18 @@ def rtn_cifar100(path, config, args, is_train=True):
         mean=[x / 255.0 for x in[0.507, 0.487, 0.441]],
         std=[x / 255.0 for x in [0.267, 0.256, 0.276]]
     )
-
-    if is_train:
-        dataset = datasets.CIFAR100(
-            root=path,
-            train=is_train,
-            transform=transforms.Compose(
-                [
-                    transforms.Resize( (config.data.dataset.train.image_size, config.data.dataset.train.image_size) ),
-                    transforms.RandomHorizontalFlip(),
-                    transforms.RandomCrop(config.data.dataset.train.image_size, 4),
-                    transforms.ToTensor(),
-                    normalize
-                ]
-            )
+    dataset = datasets.CIFAR100(
+        root=path,
+        train=is_train,
+        transform=transforms.Compose(
+            [
+                transforms.Resize( (config.data.dataset.train.image_size, config.data.dataset.train.image_size) ),
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomCrop(config.data.dataset.train.image_size, 4),
+                transforms.ToTensor(),
+                normalize
+            ]
         )
-        dataloader = DataLoader(
-            dataset,
-            batch_size=config.data.dataset.train.batch_size,
-            num_workers=config.data.dataset.train.num_worker,
-            shuffle=True,
-            pin_memory=True,
-        )
-    else:
-        dataset = datasets.CIFAR100(
-            root=path,
-            train=is_train,
-            transform=transforms.Compose(
-                [
-                    transforms.ToTensor(),
-                    normalize
-                ]
-            )
-        )
-        dataloader = DataLoader(
-            dataset,
-            batch_size=config.data.dataset.train.batch_size,
-            num_workers=config.data.dataset.train.num_worker,
-            shuffle=True,
-            pin_memory=True,
-        )
-
-    return dataloader
+    )
+    return dataset
 

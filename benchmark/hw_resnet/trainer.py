@@ -34,6 +34,10 @@ class XcepTrainer:
         self.val_accuracy = {}
         self.magnitude = {}
 
+        self.max_top1 = 0
+        self.max_top5 = 0
+        self.epoch_avg_time = []
+
     @classmethod
     def _save_state_dict(cls, state_dict: dict, path: str) -> None:
         ensure_file_can_create(path)
@@ -62,12 +66,19 @@ class XcepTrainer:
         else:
             dataset_type = config.data.dataset.test.type
 
-        dataloader = get_dataset(
+        dataset = get_dataset(
             path=config.data.dataset.train.path + config.data.dataset.train.type,
             dataset_type=dataset_type,
             config=config,
             args=args,
             is_train=is_train
+        )
+        dataloader = DataLoader(
+            dataset,
+            batch_size=config.data.dataset.train.batch_size,
+            num_workers=config.data.dataset.train.num_worker,
+            shuffle=config.data.dataset.train.shuffle,
+            pin_memory=config.data.dataset.train.num_worker,
         )
         return dataloader
 
@@ -92,15 +103,17 @@ class XcepTrainer:
         if self.args.wandb:
             name = None
             name = f'resnet_{self.args.version}_'
-            name += f'batch_{self.config.data.dataset.train.batch_size}_'
-            name += f'image_{self.config.data.dataset.train.image_size}'
+            name += f'batch{self.config.data.dataset.train.batch_size}_'
+            name += f'image{self.config.data.dataset.train.image_size}_'
+            name += f'cifar{self.config.data.dataset.train.num_classes}'
             # if self.config.data.microbatchstream.enable:
             if not self.args.origin:
                 name += f'_mbs_{self.config.data.microbatchstream.micro_batch_size}'
-            name += f'_cifar{self.config.data.dataset.train.num_classes}'
+            name += f'_worker{self.config.data.dataset.train.num_worker}'
+            name += f'_pinmemory_{self.config.data.dataset.train.pin_memory}'
 
             wandb.init(
-                project='mbs',
+                project='mbs_with_pure_code',
                 entity='xypiao97',
                 name=f'{name}')
 
@@ -146,64 +159,58 @@ class XcepTrainer:
             for epoch in range(self.config.data.train.epoch):
                 self._origin_train_epoch(epoch, train_dataloader, device)
                 self._val_accuracy(epoch, val_dataloader, device)
+                print(f"top1:{self.max_top1}, top5:{self.max_top5}, epoch time: {sum(self.epoch_avg_time)/len(self.epoch_avg_time)}\r")
         else:
             for epoch in range(self.config.data.train.epoch):
                 self._train_epoch(epoch, train_dataloader, device)
                 self._val_accuracy(epoch, val_dataloader, device)
+                print(f"top1:{self.max_top1}, top5:{self.max_top5}, epoch time: {sum(self.epoch_avg_time)/len(self.epoch_avg_time)}\r")
                 # self._grad_magnitude(epoch)
 
-        for epoch in self.train_loss:
-            self.val_accuracy[epoch]['train loss'] = self.train_loss[epoch]
-            self.val_accuracy[epoch]['epoch avg time'] = self.epoch_time[epoch]
-            # self.val_accuracy[epoch]['magnitude'] = self.magnitude[epoch]
+        # for epoch in self.train_loss:
+        #     self.val_accuracy[epoch]['train loss'] = self.train_loss[epoch]
+        #     self.val_accuracy[epoch]['epoch avg time'] = self.epoch_time[epoch]
+        #     # self.val_accuracy[epoch]['magnitude'] = self.magnitude[epoch]
 
-        self._save_log(
-            self.val_accuracy,
-            self.config.data.microbatchstream.enable,
-            self.config.data.dataset.train.batch_size,
-            self.config.data.dataset.train.type,
-            self.config.data.microbatchstream.batchnorm,
-            random_seed
-        )
+        # self._save_log(
+        #     self.val_accuracy,
+        #     self.config.data.microbatchstream.enable,
+        #     self.config.data.dataset.train.batch_size,
+        #     self.config.data.dataset.train.type,
+        #     self.config.data.microbatchstream.batchnorm,
+        #     random_seed
+        # )
 
-        if self.config.data.microbatchstream.enable:
-            if self.config.data.microbatchstream.batchnorm:
-                self._save_state_dict(
-                    self.model.state_dict(),
-                    f"./parameters/{self.config.data.dataset.train.type}_mbs_with_bn_{random_seed}/model.pth"
-                )
-            else:
-                self._save_state_dict(
-                    self.model.state_dict(),
-                    f"./parameters/{self.config.data.dataset.train.type}_mbs_without_bn_{random_seed}/model.pth"
-                )
-        else:
-            self._save_state_dict(
-                self.model.state_dict(),
-                f"./parameters/{self.config.data.dataset.train.type}_baseline_{random_seed}/model.pth"
-            )
+        # if self.config.data.microbatchstream.enable:
+        #     if self.config.data.microbatchstream.batchnorm:
+        #         self._save_state_dict(
+        #             self.model.state_dict(),
+        #             f"./parameters/{self.config.data.dataset.train.type}_mbs_with_bn_{random_seed}/model.pth"
+        #         )
+        #     else:
+        #         self._save_state_dict(
+        #             self.model.state_dict(),
+        #             f"./parameters/{self.config.data.dataset.train.type}_mbs_without_bn_{random_seed}/model.pth"
+        #         )
+        # else:
+        #     self._save_state_dict(
+        #         self.model.state_dict(),
+        #         f"./parameters/{self.config.data.dataset.train.type}_baseline_{random_seed}/model.pth"
+        #     )
 
-        print("\n")
+        print(f"top1:{self.max_top1}, top5:{self.max_top5}, epoch time: {sum(self.epoch_avg_time)/len(self.epoch_avg_time)}\n")
 
     def _train_epoch(
         self, epoch: int, dataloader: DataLoader, device: torch.device
     ) -> None:
         # Define check performance vars
-        epoch_time = 0
-        epoch_iter = 0
-        train_time = 0
-        train_iter = 0
-
-        losses = 0
-        micro_loss = 0
         mini_loss = []
         dataloader_len = len(dataloader)
 
         epoch_start = time.perf_counter()
         self.model.train()
         for idx, (input, label) in enumerate(dataloader):
-            print(f'mbs > [{epoch + 1}/{self.config.data.train.epoch}] [{idx+1}/{dataloader_len}]', end='\r')
-            train_start = time.perf_counter()
+            print(f'mbs > [{epoch + 1}/{self.config.data.train.epoch}] [{idx+1}/{dataloader_len}]    ', end='\r')
 
             if input.size(0) == self.config.data.dataset.train.batch_size:
                 chunks = math.ceil( self.config.data.dataset.train.batch_size / self.config.data.microbatchstream.micro_batch_size )
@@ -235,45 +242,34 @@ class XcepTrainer:
 
             self.opt.step()
             mini_loss.append( micro_loss )
-
-            train_end = time.perf_counter()
-            train_time += train_end - train_start
-            train_iter += 1
+        epoch_end = time.perf_counter()
+        epoch_time = epoch_end - epoch_start
 
         avg_loss = sum(mini_loss)/len(mini_loss)
-        self.scheduler.step( avg_loss )
-
-        epoch_end = time.perf_counter()
-        epoch_time += epoch_end - epoch_start
-        epoch_iter += 1
 
         if self.args.wandb:
             wandb.log( {'train loss': avg_loss}, step=epoch )
-        self._epoch_writer(
-            epoch,
-            self.config.data.train.epoch,
-            train_time, train_iter,
-            epoch_time, epoch_iter,
-            avg_loss
-        )
+            wandb.log( {'epoch time' : epoch_time}, step=epoch)
+        self.epoch_avg_time.append( epoch_time )
+        # self._epoch_writer(
+        #     epoch,
+        #     self.config.data.train.epoch,
+        #     train_time, train_iter,
+        #     epoch_time, epoch_iter,
+        #     avg_loss
+        # )
 
     def _origin_train_epoch(
         self, epoch: int, dataloader: DataLoader, device: torch.device
     ) -> None:
         # Define check performance vars
-        epoch_time = 0
-        epoch_iter = 0
-        train_time = 0
-        train_iter = 0
-
         mini_loss = []
         dataloader_len = len(dataloader)
 
         epoch_start = time.perf_counter()
         self.model.train()
         for idx, (input, label) in enumerate(dataloader):
-            print(f'origin > [{epoch + 1}/{self.config.data.train.epoch}] [{idx+1}/{dataloader_len}]', end='\r')
-            train_start = time.perf_counter()
+            print(f'origin > [{epoch + 1}/{self.config.data.train.epoch}] [{idx+1}/{dataloader_len}]    ', end='\r')
 
             input : torch.Tensor = input.to(device)
             label : torch.Tensor = label.to(device)
@@ -282,31 +278,27 @@ class XcepTrainer:
 
             output : torch.Tensor = self.model( input )
             loss : torch.Tensor = self.criterion( output, label )
-            mini_loss.append(loss.item())
             loss.backward()
 
             self.opt.step()
-
-            train_end = time.perf_counter()
-            train_time += train_end - train_start
-            train_iter += 1
-
-        avg_loss = sum(mini_loss)/len(mini_loss)
-        self.scheduler.step( avg_loss )
+            mini_loss.append(loss.item())
 
         epoch_end = time.perf_counter()
-        epoch_time += epoch_end - epoch_start
-        epoch_iter += 1
+        epoch_time = epoch_end - epoch_start
+
+        avg_loss = sum(mini_loss)/len(mini_loss)
 
         if self.args.wandb:
             wandb.log( {'train loss': avg_loss}, step=epoch )
-        self._epoch_writer(
-            epoch,
-            self.config.data.train.epoch,
-            train_time, train_iter,
-            epoch_time, epoch_iter,
-            avg_loss
-        )
+            wandb.log( {'epoch time' : epoch_time}, step=epoch)
+        self.epoch_avg_time.append( epoch_time )
+        # self._epoch_writer(
+        #     epoch,
+        #     self.config.data.train.epoch,
+        #     train_time, train_iter,
+        #     epoch_time, epoch_iter,
+        #     avg_loss
+        # )
 
     def _val_accuracy(
         self, epoch: int, dataloader: DataLoader, device: torch.device
@@ -342,12 +334,17 @@ class XcepTrainer:
             'top-1' : 100 * ( correct_top1 / total ),
             'top-5' : 100 * ( correct_top5 / total )
         }
-        print(
-            'top-1 :',
-            format(100 * ( correct_top1 / total ), ".2f"),
-            'top-5 :',
-            format(100 * ( correct_top5 / total ), ".2f"),
-        )
+        if self.max_top1 < (100 * (correct_top1 / total)):
+            self.max_top1 = (100 * (correct_top1 / total))
+        if self.max_top5 < (100 * (correct_top5 / total)):
+            self.max_top5 = (100 * (correct_top5 / total))
+
+        # print(
+        #     'top-1 :',
+        #     format(100 * ( correct_top1 / total ), ".2f"),
+        #     'top-5 :',
+        #     format(100 * ( correct_top5 / total ), ".2f"),
+        # )
 
     def _epoch_writer(
         self,
