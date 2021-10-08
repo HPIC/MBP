@@ -41,6 +41,12 @@ class Runner:
                 default=50,
                 help="config file path (default: None)",
             ),
+            args_template(
+                ["-w", "--wandb"],
+                type=bool,
+                default=False,
+                help="config file path (default: None)",
+            ),
         ]
 
         for arg in predefined_args:

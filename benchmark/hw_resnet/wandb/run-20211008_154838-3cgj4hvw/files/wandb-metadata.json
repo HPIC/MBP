@@ -1,0 +1,33 @@
+{
+    "os": "Linux-5.8.0-43-generic-x86_64-with-debian-bullseye-sid",
+    "python": "3.7.11",
+    "heartbeatAt": "2021-10-08T06:48:38.968336",
+    "startedAt": "2021-10-08T06:48:38.364743",
+    "docker": null,
+    "gpu": "NVIDIA GeForce RTX 2080 Ti",
+    "gpu_count": 2,
+    "cpu_count": 64,
+    "cuda": null,
+    "args": [
+        "-m",
+        "train",
+        "-c",
+        "toml/cifar10_mbs.toml",
+        "-v",
+        "50",
+        "-w",
+        "True"
+    ],
+    "state": "running",
+    "program": "main.py",
+    "codePath": "benchmark/hw_resnet/main.py",
+    "git": {
+        "remote": "https://github.com/HPIC/MICRO_BATCH_STREAMING.git",
+        "commit": "024fb4f1c08e4efab0ef3204dfa08bd36c153c65"
+    },
+    "email": "xypiao97@korea.ac.kr",
+    "root": "/home/phw/MICRO_BATCH_STREAMING",
+    "host": "Hera",
+    "username": "phw",
+    "executable": "/home/phw/anaconda3/envs/mbs/bin/python"
+}
