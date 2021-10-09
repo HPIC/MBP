@@ -3,6 +3,7 @@ import math, random
 import json
 import time
 from typing import List
+from torch.utils.data import dataloader
 
 import wandb
 
@@ -24,7 +25,6 @@ from util.util import ensure_dir, ensure_file_can_create, prepare_device
 
 # Get Micro-batch streaming.
 from mbs.micro_batch_streaming import MicroBatchStreaming
-
 
 class XcepTrainer:
     def __init__(self, config: ConfigParser, args) -> None:
@@ -110,7 +110,7 @@ class XcepTrainer:
             name += f'image{self.config.data.dataset.train.image_size}_'
             name += f'cifar{self.config.data.dataset.train.num_classes}'
             if self.config.data.microbatchstream.enable:
-                name += f'_mbs_{self.config.data.microbatchstream.micro_batch_size}'
+                name += f'_newmbs_{self.config.data.microbatchstream.micro_batch_size}'
             name += f'_worker{self.config.data.dataset.train.num_worker}'
             name += f'_pinmemory_{self.config.data.dataset.train.pin_memory}'
 
@@ -135,57 +135,53 @@ class XcepTrainer:
         self._print_learning_info(train_dataloader)
 
         # build model and loss, optimizer
-        model = self._select_model(self.config.data.dataset.train.num_classes)
+        model = self._select_model(self.config.data.dataset.train.num_classes).to(device)
         criterion = nn.CrossEntropyLoss().to(device)
-
-        if self.config.data.microbatchstream.enable:
-            print(f"u-Batch size : {self.config.data.microbatchstream.micro_batch_size}")
-            print("# of chunk : {num_of_chunk}".format(
-                num_of_chunk=math.ceil(
-                    self.config.data.dataset.train.batch_size / self.config.data.microbatchstream.micro_batch_size
-                )
-            ))
-            mbs = MicroBatchStreaming()
-            if self.config.data.microbatchstream.batchnorm:
-                model = mbs.set_batch_norm(model).to(device)
-                print('with MBS BatchNorm')
-            else:
-                model = model.to(device)
-                print('without MBS BatchNorm')
-            opt = torch.optim.SGD( 
-                model.parameters(), 
-                lr=self.config.data.optimizer.lr,
-                momentum=self.config.data.optimizer.mometum,
-                weight_decay=self.config.data.optimizer.decay,
-            )
-            train_dataloader = mbs.set_dataloader(
-                train_dataloader,
-                None,
-                self.config.data.microbatchstream.micro_batch_size,
-                True
-            )
-            criterion = mbs.set_loss( criterion )
-            opt = mbs.set_optimizer( opt )
-            print(f"Apply Micro Batch Streaming method!: resnet-{self.args.version}")
-        else:
-            model = model.to(device)
-            opt = torch.optim.SGD( 
-                model.parameters(), 
-                lr=self.config.data.optimizer.lr,
-                momentum=self.config.data.optimizer.mometum,
-                weight_decay=self.config.data.optimizer.decay,
-            )
-            print(f"Baseline model: resnet-{self.args.version}")
+        opt = torch.optim.SGD( 
+            model.parameters(), 
+            lr=self.config.data.optimizer.lr,
+            momentum=self.config.data.optimizer.mometum,
+            weight_decay=self.config.data.optimizer.decay,
+        )
 
         self.model = model
         self.criterion = criterion
         self.opt = opt
 
-        for epoch in range(self.config.data.train.epoch):
-            self._train_epoch(epoch, train_dataloader, device)
-            self._val_accuracy(epoch, val_dataloader, device)
-            print(f"top1:{self.max_top1}, top5:{self.max_top5}, epoch time: {sum(self.epoch_avg_time)/len(self.epoch_avg_time)}\r")
-            # self._grad_magnitude(epoch)
+        print(self.model.__class__, id(self.model))
+
+        if self.config.data.microbatchstream.enable:
+            mbs = MicroBatchStreaming(
+                dataloader=train_dataloader,
+                model=self.model,
+                criterion=self.criterion,
+                optimizer=self.opt,
+                lr_scheduler=None,
+                device_index=self.config.data.gpu.device,
+                micro_batch_size=self.config.data.microbatchstream.micro_batch_size
+            )
+            for epoch in range(self.config.data.train.epoch):
+                start = time.perf_counter()
+                mbs.train()
+                end = time.perf_counter()
+                self.epoch_avg_time.append( end - start )
+                self._val_accuracy(epoch, val_dataloader, device)
+                print(  f"[{epoch+1}/{self.config.data.train.epoch}]",
+                        f"top1:{self.max_top1}",
+                        f"top5:{self.max_top5}",
+                        f"epoch time: {sum(self.epoch_avg_time)/len(self.epoch_avg_time)}",
+                        f"loss : {mbs.get_loss()}",
+                        # end='\r'
+                    )
+                if self.args.wandb:
+                    wandb.log( {'train loss': mbs.get_loss()}, step=epoch )
+                    wandb.log( {'epoch time' : sum(self.epoch_avg_time)/len(self.epoch_avg_time)}, step=epoch)
+            
+        else:
+            for epoch in range(self.config.data.train.epoch):
+                self._train_epoch(epoch, train_dataloader, device)
+                self._val_accuracy(epoch, val_dataloader, device)
+                print(f"top1:{self.max_top1}, top5:{self.max_top5}, epoch time: {sum(self.epoch_avg_time)/len(self.epoch_avg_time)}\r")
 
         # for epoch in self.train_loss:
         #     self.val_accuracy[epoch]['train loss'] = self.train_loss[epoch]
