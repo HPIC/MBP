@@ -322,3 +322,45 @@ class _TestMBSSingleProcessDataLoaderIter(_TestMBSBaseDataLoaderIter, _SinglePro
 def _backend_iter(cls: _TestMBSBaseDataLoaderIter, queue: Queue):
 
     pass
+
+
+
+class SimpleStreamingDataloader:
+    def __init__(
+        self,
+        mbs_block,
+        dataloader: DataLoader,
+        micro_batch_size: int,
+    ) -> None:
+        self.mbs_block = mbs_block
+        self.dataloader = dataloader
+
+        self.size_dataset = self.dataloader.dataset.__len__()
+        self.batch_size = self.dataloader.batch_size
+        self.micro_batch = micro_batch_size
+
+        self.chunks = math.ceil( self.batch_size / self.micro_batch )
+
+    def __len__(self):
+        return math.ceil( self.size_dataset / self.micro_batch )
+
+    def mini_len(self):
+        return math.ceil( self.size_dataset / self.batch_size )
+
+    def __iter__(self):
+        for _ in range( self.__len__() ):
+            data = self.dataloader._get_iterator().__next__()
+            num = len(data)
+            chunks = self.chunks
+            if self.micro_batch != data[-1].size(0):
+                chunks = math.ceil( data[0].size(0) / self.micro_batch )
+
+            for idx in range(chunks):
+                self.mbs_block.zero_grad_timing = idx == 0
+                self.mbs_block.update_timing = (idx + 1) == chunks
+                self.mbs_block.remaining_step = chunks
+                yield [ 
+                    data[i][ idx * self.micro_batch : (idx+1) * self.micro_batch ]
+                    for i in range(num)
+                ]
+

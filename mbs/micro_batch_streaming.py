@@ -1,257 +1,119 @@
-from typing import List, Union
+import math
+from typing import List, Optional
 import torch
-
 from torch.nn import Module
-from torch.optim.optimizer import Optimizer
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader
 
-import math
+from queue import Queue
+from threading import Thread
+import torch.multiprocessing as mp
+from contextlib import contextmanager
 
-from mbs.types import TorchLossType
+from torch.profiler import profile, record_function, ProfilerActivity
 
-from mbs.wrap_dataloader import MBSDataloader, TestMBSDatalaoder
-from mbs.wrap_loss import MBSLoss
-from mbs.wrap_optimizer import MBSOptimizer
-from mbs.wrap_model import MBSBatchNorm
+from torch.cuda import (
+    Stream,
+    stream,
+    current_stream,
+    default_stream,
+)
 
-MBSOptimizers = Union[ MBSOptimizer, List[MBSOptimizer] ]
-MBSDataloaders = Union[ MBSDataloader, List[MBSDataloader] ]
-MBSLosses = Union[ MBSLoss, List[MBSLoss] ]
-
+status = {
+    'stop': 0,
+    'wait': 1,
+    'load': 2,
+}
 
 class _MBSBlock:
-    def __init__(self) -> None:
-        self.zero_grad_timing = False
-        self.update_timing = False
-        self.mini_batch_size : int = None
-        self.micro_batch_size : int = None
+    def __init__(
+        self,
+        target_dev_idx: Optional[int],
+        batch_size: int,
+        micro_batch: int,
+    ) -> None:
+        n_gpu = torch.cuda.device_count()
+        if n_gpu < target_dev_idx:
+            raise ValueError('error device index')
+        if target_dev_idx == None:
+            raise ValueError('Only GPU.')
+        self.device = torch.device(f'cuda:{target_dev_idx}')
 
-        self.current_iter: int = 0
-        self.chunks: int = 0
-        self.dataset_size: int = 0
-        self.total_iter: int = 0
-        self.remaining_step: int = 0
-
-        # check mini-batch iteration
-        self.mini_iter: int = 0
-        self.total_mini_iter: int = 0
-        self.temp: int = 0
-
-    def update(self):
-        chunks = self.chunks
-
-        if self.current_iter % chunks == 1:
-            self.mini_iter += 1
-            self.zero_grad_timing = True
-            self.update_timing = False
-        elif self.current_iter % chunks == 0 or self.current_iter == self.total_iter:
-            self.zero_grad_timing = False
-            self.update_timing = True
-        else:
-            self.zero_grad_timing = False
-            self.update_timing = False
-
-        if self.mini_iter == self.total_mini_iter:
-            self.temp = self.current_iter if self.temp == 0 else self.temp
-            self.remaining_step = self.total_iter - self.temp + 1
-        else:
-            self.remaining_step = chunks
-
-        # print(
-        #     self.mini_iter, self.total_mini_iter,
-        #     self.current_iter, self.total_iter, self.remaining_step,
-        #     self.zero_grad_timing, self.update_timing, " "*10,
-        # )
-
+        self.batch_size = batch_size
+        self.micro_batch = micro_batch
+        self.chunks = math.ceil( batch_size / micro_batch )
 
 class MicroBatchStreaming(_MBSBlock):
-    r'''
-        Micro Batch Stream object
-        - It is library(or framework) for training models with a large dataset on small GPU.
-        - It is appropriate in several situations.
-            1. Using a large (mini)batch size on small GPU.
-            2. Using large image size datasets with a large (mini)batch size.
-
-        Warning::
-            Micro Batch Stream is running like OOP interface.
-            therefore MBS subclass does not inherit torch class.
-            (MBSLoss only inherits torch.nn.Module class, because )
-
-        Example::
-            >>> mbs = MicroBatchStream()
-            >>>     ...
-            >>> model = YourModel()
-            >>> model : torch.nn.Module = mbs.set_batch_norm( model )
-            >>>     ...
-            >>> dataloader = torch.utils.data.Dataloader(...)
-            >>> dataloader : MBSDataloader = mbs.set_dataloader( dataloader )
-            >>>     ...
-            >>> criterion = nn.CrossEntropyLoss(...)
-            >>> criterion : MBSLoss = mbs.set_loss( criterion )
-            >>>     ...
-            >>> optimizer = torch.optim.SGD(...)
-            >>> optimizer : MBSOptimizer = mbs.set_optimizer( optimizer )
-            >>>     ...
-            >>> for idx, (input, target) in enumerate(dataloader):
-            >>>     optimizer.zero_grad()
-            >>>     input = input
-            >>>     output = model(input)
-            >>>     loss = criterion(output, target)
-            >>>     loss.backward()
-            >>>     optimizer.step()
-    '''
-    def __init__( self ) -> None:
-        r'''
-            Initializes MicroBatchStreaming state.
-        '''
-        super(MicroBatchStreaming, self).__init__()
-        self._optimizers : MBSOptimizers = []
-        self._dataloaders : MBSDataloaders = []
-        self._losses : MBSLosses = []
-
-    def set_dataloader(
-        self, dataloader : DataLoader, device: torch.device, micro_batch_size : int = 4, shuffle: bool = True,
-    ) -> TestMBSDatalaoder:
-        r'''
-            Wrap PyTorch dataloader to MBS dataloader,
-            MBS dataloader returns micro-batch-based dataset to user model when user's model is training.
-
-            Args:
-                dataloader : torch.utils.data.dataloader.
-                micro_batch_size : int-type, set micro batch size for streaming in each iteration.
-            Returns:
-                MBSDataloader : output MBS(OOP interface-based) dataloader.
-            Raises:
-                TypeError : input(dataloader) is not torch.utils.data.dataloader format.
-                    or input(micro_batch_size) is not int-type format.
-
-            Example::
-                >>> dataloader = torch.utils.data.Dataloader(...)
-                >>> mbs = MicroBatchStream()
-                >>> dataloader = mbs.set_dataloader( dataloader )
-                >>> for idx, (input, target) in enumerate(dataloader):
-                >>>     input = input.to(device)
-                >>>         ...
-        '''
-        self.mini_batch_size = dataloader.batch_size
-        self.micro_batch_size = micro_batch_size
-        self.dataset_size = dataloader.dataset.__len__()
-        self.total_iter = math.ceil(self.dataset_size / self.micro_batch_size)
-        self.total_mini_iter = dataloader.__len__()
-        self.chunks = math.ceil( self.mini_batch_size / self.micro_batch_size )
-        # mbs_dataloader = MBSDataloader(
-        #     dataloader=dataloader,
-        #     micro_batch_size=micro_batch_size,
-        #     mbs=self
-        # )
-        # self._dataloaders.append( mbs_dataloader )
-        mbs_dataloader = TestMBSDatalaoder.wrap_dataloader(
-            mbs_block=self,
-            dataloader=dataloader,
-            shuffle=shuffle,
-            device=device,
-            micro_batch_size=micro_batch_size
+    def __init__(
+        self,
+        dataloader: DataLoader,
+        model: Module,
+        criterion: Module,
+        optimizer: Optimizer,
+        lr_scheduler: _LRScheduler = None,
+        device_index: Optional[int] = None,
+        micro_batch_size: int = 4,
+    ) -> None:
+        super().__init__(
+            target_dev_idx=device_index,
+            batch_size=dataloader.batch_size,
+            micro_batch=micro_batch_size
         )
-        return mbs_dataloader
+        self.dataloader = dataloader
+        self.module = model
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.scheduler = lr_scheduler
 
-    def set_optimizer(
-        self, optimizer : Optimizer
-    ) -> MBSOptimizer:
-        r'''
-            Wrap PyTorch optimizer to MBS optimizer,
+        self.data_queue = Queue()
+        self.loss_queue = Queue()
 
-            Args:
-                optimizer : torch.optim.Optimizer.
-            Returns:
-                MBSOptimizer : output MBS(OOP interface-based) optimizer.
-            Raises:
-                TypeError : input(optimizer) type is not torch.optim.Optimizer.
+    def train(self):
+        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+        self.epoch_loss = 0
+        for _, (data0, data1) in enumerate( self.dataloader ):
+            data0: torch.Tensor
+            data1: torch.Tensor
 
-            Example::
-                >>> optimizer = torch.optim.SGD(...)
-                >>> mbs = MicroBatchStream()
-                >>> optimizer = mbs.set_optimizer( optimizer )
-        '''
-        if not isinstance(optimizer, Optimizer):
-            raise TypeError('[MBS Error] input(optimizer) type does not match, please check input(optmizer) type.')
+            mini_loss = 0
+            chunks = self.chunks
+            if data0.size(0) != self.batch_size:
+                chunks = math.ceil( data0.size(0) / self.micro_batch )
 
-        mbs_optimizer = MBSOptimizer(
-            optimizer,
-            mbs_block=self
-        )
-        self._optimizers.append( mbs_optimizer )
-        return mbs_optimizer
+            chunk_data0 = data0.chunk( chunks )
+            chunk_data1 = data1.chunk( chunks )
 
-    def set_loss(
-        self, loss_fn : TorchLossType, normalize_factor : float = 1.0
-    ) -> MBSLoss:
-        r'''
-            Wrap PyTorch loss function to MBS loss function,
+            self.optimizer.zero_grad()
 
-            Args:
-                loss_fn : torch.nn.Module,
-                    because loss function is torch.nn.Module-based class in PyTorch.
-                normalize_factor : float-type,
-                    Determine the degree of normalization of micro-batch.
-                    0(do not normalization) --> 1(strongest normalization)
-            Returns:
-                MBSLoss : output MBS(OOP interface-based) loss function(object).
-            Raises:
-                TypeError : input(loss_fn) is not torch.nn.Module format.
-                    or input(normalize_factor) is not float-type format.
+            # with torch.cuda.device(self.device):
+            for _, (input, label) in enumerate( zip(chunk_data0, chunk_data1) ):
+                input = input.to(self.device)
+                label = label.to(self.device)
+                output: torch.Tensor = self.module( input )
+                loss: torch.Tensor = self.criterion( output, label ) / chunks
+                loss.backward()
+                mini_loss += loss.item()
 
-            Example::
-                >>> criterion = nn.CrossEntropyLoss(...)
-                >>> mbs = MicroBatchStream()
-                >>> criterion = mbs.set_loss( criterion )
-                >>> for idx, (input, target) in enumerate(dataloader):
-                >>>         ...
-                >>>     input = input
-                >>>     output = model(input)
-                >>>     loss = criterion(output, target)
-                >>>     loss.backward()
-                >>>         ...
-        '''
-        if not isinstance(loss_fn, TorchLossType):
-            raise TypeError(
-                '[MBS error] loss function type does not match, please check loss function format.'
-            )
-        if not isinstance(normalize_factor, float):
-            raise TypeError(
-                '[MBS error] normalize_factor type does not match, please check normalize factor format'
-            )
+            self.optimizer.step()
+            self.epoch_loss += mini_loss
+                # if idx > 1:
+                #     break
+        # prof.export_chrome_trace("trace.json")
 
-        mbs_loss = MBSLoss(
-            mbs_block=self,
-            loss_fn=loss_fn,
-            normalize_factor=normalize_factor
-        )
-        self._losses.append( mbs_loss )
-        return mbs_loss
+    def get_loss(self):
+        return self.epoch_loss / self.dataloader.__len__()
 
-    def set_batch_norm(
-        self, module : Module
-    ):
-        r'''
-            wrap PyTorch::BatchNorm to MBS::BatchNorm.
-            it means only replace PyTorch::BatchNorm to MBS::BatchNorm.
 
-            Args:
-                module : Pytorch::Module
+def wait_stream(source: Stream, target: Stream):
+    source.wait_stream(target)
 
-            Returns:
-                module_output : Pytorch::Module
-                    but Pytorch::BatchNorm layers are replaced MBS::BatchNorm.
+@contextmanager
+def use_stream(strm: Stream):
+    with stream( strm ):
+        yield
 
-            Example::
-                >>> model = net()
-                >>> mbs = MicroBatchStream()
-                >>> model = mbs.set_batch_norm( model )
-        '''
-        if not isinstance(module, Module):
-            raise TypeError(
-                '[MBS error] input module type does not match, please check input module type.'
-            )
-        mbs_model = MBSBatchNorm.wrap_batch_norm(module, self)
-        return mbs_model
+class Task:
+    def __init__(self) -> None:
+        pass
 
