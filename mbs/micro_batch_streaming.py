@@ -53,7 +53,8 @@ class MicroBatchStreaming:
         optimizer: Optimizer,
         lr_scheduler: _LRScheduler = None,
         device_index: Optional[int] = None,
-        micro_batch_size: int = 4,
+        batch_size: int = 1,
+        micro_batch_size: int = 1,
     ) -> None:
         # super().__init__(
         #     target_dev_idx=device_index,
@@ -68,20 +69,29 @@ class MicroBatchStreaming:
 
         self.device = torch.device(f'cuda:{device_index}')
 
-        self.batch_size = dataloader.batch_size
+        self.batch_size = batch_size
         self.micro_batch = micro_batch_size
         self.chunks = math.ceil( self.batch_size / self.micro_batch )
 
+        self.cpy_strm = Stream(self.device)
+        self.cmp_strm = Stream(self.device)
+
+    def get_trainer(self):
+        return self
+
     def train(self):
         self.epoch_loss = 0
-        for _, (data0, data1) in enumerate( self.dataloader ):
+        self.module.train()
+        for idx, (data0, data1) in enumerate( self.dataloader ):
             data0: torch.Tensor
             data1: torch.Tensor
 
             mini_loss = 0
+            # size = self.micro_batch
             chunks = self.chunks
             if data0.size(0) != self.batch_size:
                 chunks = math.ceil( data0.size(0) / self.micro_batch )
+                # size = math.ceil( data0.size(0) / chunks )
 
             chunk_data0 = data0.chunk( chunks )
             chunk_data1 = data1.chunk( chunks )
@@ -93,8 +103,27 @@ class MicroBatchStreaming:
                 label = l.to(self.device)
                 output: torch.Tensor = self.module( input )
                 loss: torch.Tensor = self.criterion( output, label ) / chunks
+                mini_loss += loss.detach().item()
                 loss.backward()
-                mini_loss += loss.item()
+
+            # self.optimizer.zero_grad()
+            # for cidx in range(chunks):
+            #     if cidx > 0:
+            #         self.cpy_strm.wait_stream( self.cmp_strm )
+            #     with stream( self.cpy_strm ):
+            #         lower = cidx * size
+            #         upper = ( cidx + 1 ) * size
+            #         da0: torch.Tensor = data0[lower:upper].to(self.device)
+            #         da1: torch.Tensor = data1[lower:upper].to(self.device)
+
+            #     self.cmp_strm.wait_stream( self.cpy_strm )
+            #     with stream( self.cmp_strm ):
+            #         da0.record_stream( self.cmp_strm )
+            #         da1.record_stream( self.cmp_strm )
+            #         output: torch.Tensor = self.module( da0 )
+            #         loss: torch.Tensor = self.criterion( output, da1 ) / chunks
+            #         loss.backward()
+            #         mini_loss += loss.detach().item()
 
             self.optimizer.step()
             self.epoch_loss += mini_loss
@@ -133,7 +162,7 @@ def micro_batch_streaming(
             output: torch.Tensor = model( input )
             loss: torch.Tensor = criterion( output, label ) / chunks
             loss.backward()
-            mini_loss += loss.item()
+            mini_loss += loss.detach().item()
 
         optimizer.step()
         epoch_loss += mini_loss
