@@ -24,7 +24,7 @@ from util.config_parser import ConfigParser, DotDict
 from util.util import ensure_dir, ensure_file_can_create, prepare_device
 
 # Get Micro-batch streaming.
-from mbs.micro_batch_streaming import MicroBatchStreaming
+from mbs.micro_batch_streaming import MicroBatchStreaming, micro_batch_streaming
 
 class XcepTrainer:
     def __init__(self, config: ConfigParser, args) -> None:
@@ -135,48 +135,64 @@ class XcepTrainer:
         self._print_learning_info(train_dataloader)
 
         # build model and loss, optimizer
-        model = self._select_model(self.config.data.dataset.train.num_classes).to(device)
-        criterion = nn.CrossEntropyLoss().to(device)
-        opt = torch.optim.SGD( 
-            model.parameters(), 
+        self.model = self._select_model(self.config.data.dataset.train.num_classes).to(device)
+        self.criterion = nn.CrossEntropyLoss().to(device)
+        self.opt = torch.optim.SGD( 
+            self.model.parameters(), 
             lr=self.config.data.optimizer.lr,
             momentum=self.config.data.optimizer.mometum,
             weight_decay=self.config.data.optimizer.decay,
         )
 
-        self.model = model
-        self.criterion = criterion
-        self.opt = opt
-
         print(self.model.__class__, id(self.model))
 
         if self.config.data.microbatchstream.enable:
-            mbs = MicroBatchStreaming(
-                dataloader=train_dataloader,
-                model=self.model,
-                criterion=self.criterion,
-                optimizer=self.opt,
-                lr_scheduler=None,
-                device_index=self.config.data.gpu.device,
-                micro_batch_size=self.config.data.microbatchstream.micro_batch_size
-            )
+            # mbs = MicroBatchStreaming(
+            #     dataloader=train_dataloader,
+            #     model=self.model,
+            #     criterion=self.criterion,
+            #     optimizer=self.opt,
+            #     lr_scheduler=None,
+            #     device_index=self.config.data.gpu.device,
+            #     micro_batch_size=self.config.data.microbatchstream.micro_batch_size
+            # )
+            # for epoch in range(self.config.data.train.epoch):
+            #     start = time.perf_counter()
+            #     mbs.train()
+            #     end = time.perf_counter()
+            #     self.epoch_avg_time.append( end - start )
+            #     self._val_accuracy(epoch, val_dataloader, device)
+            #     print(  f"[{epoch+1}/{self.config.data.train.epoch}]",
+            #             f"top1:{self.max_top1}",
+            #             f"top5:{self.max_top5}",
+            #             f"epoch time: {sum(self.epoch_avg_time)/len(self.epoch_avg_time)}",
+            #             f"loss : {mbs.get_loss()}",
+            #             # end='\r'
+            #         )
             for epoch in range(self.config.data.train.epoch):
                 start = time.perf_counter()
-                mbs.train()
+                epoch_loss = micro_batch_streaming(
+                    dataloader=train_dataloader,
+                    model=self.model,
+                    criterion=self.criterion,
+                    optimizer=self.opt,
+                    lr_scheduler=None,
+                    dev=device,
+                    micro_batch_size=self.config.data.microbatchstream.micro_batch_size
+                )
                 end = time.perf_counter()
                 self.epoch_avg_time.append( end - start )
                 self._val_accuracy(epoch, val_dataloader, device)
+                if self.args.wandb:
+                    wandb.log( {'train loss': epoch_loss}, step=epoch )
+                    wandb.log( {'epoch time' : sum(self.epoch_avg_time)/len(self.epoch_avg_time)}, step=epoch)
                 print(  f"[{epoch+1}/{self.config.data.train.epoch}]",
                         f"top1:{self.max_top1}",
                         f"top5:{self.max_top5}",
                         f"epoch time: {sum(self.epoch_avg_time)/len(self.epoch_avg_time)}",
-                        f"loss : {mbs.get_loss()}",
+                        f"loss : {epoch_loss}",
                         # end='\r'
                     )
-                if self.args.wandb:
-                    wandb.log( {'train loss': mbs.get_loss()}, step=epoch )
-                    wandb.log( {'epoch time' : sum(self.epoch_avg_time)/len(self.epoch_avg_time)}, step=epoch)
-            
         else:
             for epoch in range(self.config.data.train.epoch):
                 self._train_epoch(epoch, train_dataloader, device)
