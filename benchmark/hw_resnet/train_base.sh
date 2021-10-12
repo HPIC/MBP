@@ -1,11 +1,16 @@
-# python main.py -m train -c toml/cifar10_base.toml -r 100
-# python main.py -m train -c toml/cifar10_base.toml -r 1000
-# python main.py -m train -c toml/cifar10_base.toml -r 10000
-# python main.py -m train -c toml/cifar10_base.toml -r 5000
-# python main.py -m train -c toml/cifar10_base.toml -r 50000
+# python main.py -m train -c toml/cifar10_base.toml -r 1000  -v 50 -w True
+# python main.py -m train -c toml/cifar10_base.toml -r 100000 -v 50 -w True
+# python main.py -m train -c toml/cifar10_base.toml -r 50000000 -v 50 -w True
 
-python main.py -m train -c toml/cifar100_base.toml -r 100
-python main.py -m train -c toml/cifar100_base.toml -r 1000
-python main.py -m train -c toml/cifar100_base.toml -r 10000
-python main.py -m train -c toml/cifar100_base.toml -r 5000
-python main.py -m train -c toml/cifar100_base.toml -r 50000
+python main.py -m train -c toml/cifar10_base.toml -r 1000  -v 152 -w True
+python main.py -m train -c toml/cifar10_base.toml -r 100000 -v 152 -w True
+python main.py -m train -c toml/cifar10_base.toml -r 50000000 -v 152 -w True
+
+# python main.py -m train -c toml/cifar10_mbs.toml -r 1000  -v 50 -w True
+# python main.py -m train -c toml/cifar10_mbs.toml -r 100000 -v 50 -w True
+# python main.py -m train -c toml/cifar10_mbs.toml -r 50000000 -v 50 -w True
+
+python main.py -m train -c toml/cifar10_mbs.toml -r 1000  -v 152 -w True
+python main.py -m train -c toml/cifar10_mbs.toml -r 100000 -v 152 -w True
+python main.py -m train -c toml/cifar10_mbs.toml -r 50000000 -v 152 -w True
+

@@ -2,13 +2,17 @@ from torch.utils.data.dataloader import DataLoader
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 
-def get_dataset(path, dataset_type, config, args, is_train):
-    if dataset_type == 'imagenet2012':
-        return rtn_imagenet( path, config, args, is_train )
-    elif dataset_type == 'cifar10':
-        return rtn_cifar10( path, config, args, is_train )
+def get_dataset(path, dataset_type, args, is_train):
+    # if dataset_type == 'imagenet2012':
+    #     return rtn_imagenet( path, config, args, is_train )
+    # elif dataset_type == 'cifar10':
+    #     return rtn_cifar10( path, config, args, is_train )
+    # elif dataset_type == 'cifar100':
+    #     return rtn_cifar100( path, config, args, is_train )
+    if dataset_type == 'cifar10':
+        return rtn_cifar10(path, args, is_train)
     elif dataset_type == 'cifar100':
-        return rtn_cifar100( path, config, args, is_train )
+        return rtn_cifar100(path, args, is_train)
 
 def rtn_imagenet( path, config, args, is_train: bool = True):
     if is_train:
@@ -36,7 +40,7 @@ def rtn_imagenet( path, config, args, is_train: bool = True):
     return dataset
 
 
-def rtn_cifar10(path, config, args, is_train=True):
+def rtn_cifar10(path, args, is_train=True):
     normalize = transforms.Normalize(
         mean=[0.5, 0.5, 0.5],
         std=[0.5, 0.5, 0.5]
@@ -47,9 +51,9 @@ def rtn_cifar10(path, config, args, is_train=True):
         train=is_train,
         transform=transforms.Compose(
             [
-                transforms.Resize( (config.data.dataset.train.image_size, config.data.dataset.train.image_size) ),
+                transforms.Resize( (args.image_size, args.image_size) ),
                 transforms.RandomHorizontalFlip(),
-                transforms.RandomCrop(config.data.dataset.train.image_size, 4),
+                transforms.RandomCrop(args.image_size, 4),
                 transforms.ToTensor(),
                 normalize
             ]
@@ -59,7 +63,7 @@ def rtn_cifar10(path, config, args, is_train=True):
     return dataset
 
 
-def rtn_cifar100(path, config, args, is_train=True):
+def rtn_cifar100(path, args, is_train=True):
     normalize = transforms.Normalize(
         mean=[x / 255.0 for x in[0.507, 0.487, 0.441]],
         std=[x / 255.0 for x in [0.267, 0.256, 0.276]]
@@ -69,9 +73,9 @@ def rtn_cifar100(path, config, args, is_train=True):
         train=is_train,
         transform=transforms.Compose(
             [
-                transforms.Resize( (config.data.dataset.train.image_size, config.data.dataset.train.image_size) ),
+                transforms.Resize( (args.image_size, args.image_size) ),
                 transforms.RandomHorizontalFlip(),
-                transforms.RandomCrop(config.data.dataset.train.image_size, 4),
+                transforms.RandomCrop(args.image_size, 4),
                 transforms.ToTensor(),
                 normalize
             ]

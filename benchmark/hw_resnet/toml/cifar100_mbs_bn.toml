@@ -8,11 +8,11 @@ decay = 0.0005
 
 # Device Related Configurations
 [gpu]
-device = 0
+device = 1
 
 # Train Related Configurations
 [train]
-epoch = 100
+epoch = 10
 
 # Dataset Related Configurations
 [dataset]
@@ -20,19 +20,24 @@ epoch = 100
     type="cifar100"
     path="./dataset/"
     num_classes = 100
-    batch_size = 512
+    batch_size = 256
     image_size = 32
-    num_worker = 16
+    num_worker = 0
+    shuffle = false
+    pin_memory = false
 
   [dataset.test]
     type="cifar100"
     path="./dataset/"
     num_classes = 100
     batch_size = 64
-    image_size = 256
+    image_size = 32
+    num_worker = 0
+    shuffle = false
+    pin_memory = false
 
 # Micro Batch Streaming
 [microbatchstream]
 enable = true
-batchnorm = true
+batchnorm = false
 micro_batch_size = 64

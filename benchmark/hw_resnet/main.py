@@ -47,6 +47,66 @@ class Runner:
                 default=False,
                 help="config file path (default: None)",
             ),
+            args_template(
+                ["-i", "--image_size"],
+                type=int,
+                default=32,
+                help="config file path (default: None)",
+            ),
+            args_template(
+                ["-b", "--batch_size"],
+                type=int,
+                default=256,
+                help="config file path (default: None)",
+            ),
+            args_template(
+                ["-p", "--pin_memory"],
+                type=bool,
+                default=False,
+                help="config file path (default: None)",
+            ),
+            args_template(
+                ["-d", "--data_type"],
+                type=str,
+                default='cifar10',
+                help="config file path (default: None)",
+            ),
+            args_template(
+                ["--num_workers"],
+                type=int,
+                default=0,
+                help="config file path (default: None)",
+            ),
+            args_template(
+                ["--num_classes"],
+                type=int,
+                default=10,
+                help="config file path (default: None)",
+            ),
+            args_template(
+                ["-s", "--shuffle"],
+                type=bool,
+                default=False,
+                help="config file path (default: None)",
+            ),
+            args_template(
+                ["--mbs"],
+                type=bool,
+                default=False,
+                help="config file path (default: None)",
+            ),
+            args_template(
+                ["--micro_batch_size"],
+                type=int,
+                default=32,
+                help="config file path (default: None)",
+            ),
+            args_template(
+                ["--exp"],
+                type=int,
+                default=1,
+                help="config file path (default: None)",
+            ),
         ]
 
         for arg in predefined_args:

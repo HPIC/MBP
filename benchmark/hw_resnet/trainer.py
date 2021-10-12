@@ -61,26 +61,56 @@ class XcepTrainer:
             with open(f"./loss/baseline_{batch_size}_{dataset_info}_seed_{random_seed}.json", "w") as file:
                 json.dump(log, file, indent=4)
 
-    @classmethod
-    def _get_data_loader(cls, config: DotDict, args, is_train: bool) -> DataLoader:
-        if is_train:
-            dataset_type = config.data.dataset.train.type
-        else:
-            dataset_type = config.data.dataset.test.type
+    # @classmethod
+    # def _get_data_loader(cls, config: DotDict, args, is_train: bool) -> DataLoader:
+    #     dataset = get_dataset(
+    #         path=config.path + config.type,
+    #         dataset_type=config.type,
+    #         config=config,
+    #         args=args,
+    #         is_train=is_train
+    #     )
+    #     dataloader = DataLoader(
+    #         dataset,
+    #         batch_size=config.batch_size,
+    #         num_workers=config.num_worker,
+    #         shuffle=config.shuffle,
+    #         pin_memory=config.pin_memory,
+    #     )
+    #     return dataloader
 
+    @classmethod
+    def _get_train_dataloader(cls, config: DotDict, args) -> DataLoader:
+        print(args.batch_size, args.num_workers, args.shuffle, args.pin_memory, args.mbs)
         dataset = get_dataset(
-            path=config.data.dataset.train.path + config.data.dataset.train.type,
-            dataset_type=dataset_type,
-            config=config,
+            path=config.path + args.data_type,
+            dataset_type=args.data_type,
             args=args,
-            is_train=is_train
+            is_train=True
         )
         dataloader = DataLoader(
             dataset,
-            batch_size=config.data.dataset.train.batch_size,
-            num_workers=config.data.dataset.train.num_worker,
-            shuffle=config.data.dataset.train.shuffle,
-            pin_memory=config.data.dataset.train.pin_memory,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            shuffle=args.shuffle,
+            pin_memory=args.pin_memory,
+        )
+        return dataloader
+
+    @classmethod
+    def _get_test_dataloader(cls, config: DotDict, args) -> DataLoader:
+        dataset = get_dataset(
+            path=config.path + args.data_type,
+            dataset_type=args.data_type,
+            args=args,
+            is_train=False
+        )
+        dataloader = DataLoader(
+            dataset,
+            batch_size=config.batch_size,
+            num_workers=config.num_workers,
+            shuffle=config.shuffle,
+            pin_memory=config.pin_memory,
         )
         return dataloader
 
@@ -92,33 +122,57 @@ class XcepTrainer:
         elif self.args.version == 152:
             return resnet152(num_classes)
 
-    def _print_learning_info(self, dataloader):
+    def _print_learning_info(self, dataloader: DataLoader):
         print(f'WanDB? {self.args.wandb}')
         print(f"Random Seed : {self.args.random_seed}")
         print(f"Epoch : {self.config.data.train.epoch}")
-        print(f"Batch size : {self.config.data.dataset.train.batch_size}")
+        print(f"Batch size : {dataloader.batch_size}")
         print(f"Image size : {self.config.data.dataset.train.image_size}")
         print(f"num of classes : {self.config.data.dataset.train.num_classes}")
         print(f"pin memory : {dataloader.pin_memory}")
+        print(f"num workers : {dataloader.num_workers}")
+
+        if self.args.mbs:
+            print(f">>> micro batch size : {self.args.micro_batch_size}")
+            print(f"*** Training ResNet-{self.args.version} with MBS ***")
+        else:
+            print(f"*** Training ResNet-{self.args.version} (Baseline) ***")
+
+    def _check_before_running(self, dataloader: DataLoader):
+        if self.args.batch_size != dataloader.batch_size:
+            raise ValueError("Batch size is not equal!")
+        if self.args.pin_memory != dataloader.pin_memory:
+            raise ValueError("Status of pin memory is not equal!")
+        if self.args.num_workers != dataloader.num_workers:
+            raise ValueError("Num of wokers is not equal!")
+
+        if self.args.wandb:
+            name = None
+            if self.args.mbs:
+                name = f'resnet-{self.args.version}(mbs, {dataloader.pin_memory})'
+            else:
+                name = f'resnet-{self.args.version}(baseline, {dataloader.pin_memory})'
+
+            tags = []
+            tags.append( f'batch {dataloader.batch_size}' )
+            tags.append( f'image {self.config.data.dataset.train.image_size}' )
+            tags.append( f'worker {dataloader.num_workers}' )
+            tags.append( f'pin memory {dataloader.pin_memory}' )
+            tags.append( f'cifar {self.args.num_classes}')
+            tags.append( f'exp {self.args.exp}')
+
+            if self.args.mbs and self.config.data.microbatchstream.enable:
+                tags.append( f'mbs {self.config.data.microbatchstream.micro_batch_size}' )
+
+            wandb.init(
+                project='mbs_paper_results',
+                entity='xypiao97',
+                name=f'{name}',
+                tags=tags,
+            )
 
     def train(self) -> None:
         # Setting Random seed.
-        if self.args.wandb:
-            name = None
-            name = f'resnet_{self.args.version}_'
-            name += f'batch{self.config.data.dataset.train.batch_size}_'
-            name += f'image{self.config.data.dataset.train.image_size}_'
-            name += f'cifar{self.config.data.dataset.train.num_classes}'
-            if self.config.data.microbatchstream.enable:
-                name += f'_newmbs_{self.config.data.microbatchstream.micro_batch_size}'
-            name += f'_worker{self.config.data.dataset.train.num_worker}'
-            name += f'_pinmemory_{self.config.data.dataset.train.pin_memory}'
-
-            wandb.init(
-                project='mbs_with_pure_code',
-                entity='xypiao97',
-                name=f'{name}')
-
         random_seed = self.args.random_seed
 
         torch.manual_seed(random_seed)
@@ -129,13 +183,14 @@ class XcepTrainer:
         random.seed(random_seed)
 
         device, _ = prepare_device(target=self.config.data.gpu.device)
-        train_dataloader = self._get_data_loader(self.config, self.args, True)
-        val_dataloader = self._get_data_loader(self.config, self.args, False)
+        train_dataloader = self._get_train_dataloader( self.config.data.dataset.train, self.args )
+        val_dataloader = self._get_test_dataloader( self.config.data.dataset.test, self.args )
 
         self._print_learning_info(train_dataloader)
+        self._check_before_running(train_dataloader)
 
         # build model and loss, optimizer
-        self.model = self._select_model(self.config.data.dataset.train.num_classes).to(device)
+        self.model = self._select_model(self.args.num_classes).to(device)
         self.criterion = nn.CrossEntropyLoss().to(device)
         self.opt = torch.optim.SGD( 
             self.model.parameters(), 
@@ -144,9 +199,7 @@ class XcepTrainer:
             weight_decay=self.config.data.optimizer.decay,
         )
 
-        print(self.model.__class__, id(self.model))
-
-        if self.config.data.microbatchstream.enable:
+        if self.args.mbs:
             mbs_trainer = MicroBatchStreaming(
                 dataloader=train_dataloader,
                 model=self.model,
@@ -154,8 +207,8 @@ class XcepTrainer:
                 optimizer=self.opt,
                 lr_scheduler=None,
                 device_index=self.config.data.gpu.device,
-                batch_size=self.config.data.dataset.train.batch_size,
-                micro_batch_size=self.config.data.microbatchstream.micro_batch_size
+                batch_size=self.args.batch_size,
+                micro_batch_size=self.args.micro_batch_size
             ).get_trainer()
             for epoch in range(self.config.data.train.epoch):
                 start = time.perf_counter()
@@ -181,7 +234,8 @@ class XcepTrainer:
                         f"top5:{self.max_top5}",
                         f"epoch time: {sum(self.epoch_avg_time)/len(self.epoch_avg_time)}",
                         f"loss : {self.epoch_loss}",
-                        end='\r')
+                        # end='\r',
+                    )
 
         # for epoch in self.train_loss:
         #     self.val_accuracy[epoch]['train loss'] = self.train_loss[epoch]
@@ -245,8 +299,8 @@ class XcepTrainer:
         epoch_end = time.perf_counter()
         epoch_time = epoch_end - epoch_start
 
-        if self.config.data.microbatchstream.enable:
-            losses *= math.ceil(self.config.data.dataset.train.batch_size / self.config.data.microbatchstream.micro_batch_size) 
+        if self.args.mbs:
+            losses *= math.ceil(self.args.batch_size / self.args.micro_batch_size) 
         losses /= idx
 
         if self.args.wandb:

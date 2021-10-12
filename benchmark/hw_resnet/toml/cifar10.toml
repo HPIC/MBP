@@ -22,7 +22,7 @@ epoch = 100
     num_classes = 10
     batch_size = 128
     image_size = 32
-    num_worker = 0
+    num_workers = 0
     shuffle = false
     pin_memory = true
 
@@ -32,12 +32,12 @@ epoch = 100
     num_classes = 10
     batch_size = 64
     image_size = 32
-    num_worker = 0
+    num_workers = 0
     shuffle = false
     pin_memory = false
 
 # Micro Batch Streaming
 [microbatchstream]
-enable = true
+enable = false
 batchnorm = false
 micro_batch_size = 32

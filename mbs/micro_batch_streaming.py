@@ -106,16 +106,14 @@ class MicroBatchStreaming:
                 mini_loss += loss.detach().item()
                 loss.backward()
 
-            # self.optimizer.zero_grad()
             # for cidx in range(chunks):
-            #     if cidx > 0:
-            #         self.cpy_strm.wait_stream( self.cmp_strm )
             #     with stream( self.cpy_strm ):
             #         lower = cidx * size
             #         upper = ( cidx + 1 ) * size
             #         da0: torch.Tensor = data0[lower:upper].to(self.device)
             #         da1: torch.Tensor = data1[lower:upper].to(self.device)
 
+            #     self.cpy_strm.wait_stream( self.cmp_strm )
             #     self.cmp_strm.wait_stream( self.cpy_strm )
             #     with stream( self.cmp_strm ):
             #         da0.record_stream( self.cmp_strm )
