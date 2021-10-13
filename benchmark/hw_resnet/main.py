@@ -107,6 +107,12 @@ class Runner:
                 default=1,
                 help="config file path (default: None)",
             ),
+            args_template(
+                ["--bn"],
+                type=bool,
+                default=False,
+                help="config file path (default: None)",
+            ),
         ]
 
         for arg in predefined_args:
