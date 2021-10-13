@@ -150,6 +150,8 @@ class XcepTrainer:
             name = None
             if self.args.mbs:
                 name = f'resnet-{self.args.version}(mbs, {dataloader.pin_memory})'
+                if self.args.bn:
+                    name += ' with MBS BN'
             else:
                 name = f'resnet-{self.args.version}(baseline, {dataloader.pin_memory})'
 
