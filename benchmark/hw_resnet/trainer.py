@@ -24,7 +24,7 @@ from util.config_parser import ConfigParser, DotDict
 from util.util import ensure_dir, ensure_file_can_create, prepare_device
 
 # Get Micro-batch streaming.
-from mbs.micro_batch_streaming import MicroBatchStreaming, micro_batch_streaming
+from mbs.micro_batch_streaming import MicroBatchStreaming
 
 class XcepTrainer:
     def __init__(self, config: ConfigParser, args) -> None:
@@ -134,7 +134,7 @@ class XcepTrainer:
 
         if self.args.mbs:
             print(f">>> micro batch size : {self.args.micro_batch_size}")
-            print(f"*** Training ResNet-{self.args.version} with MBS ***")
+            print(f"*** Training ResNet-{self.args.version} with MBS, Consider BN? {self.args.bn} ***")
         else:
             print(f"*** Training ResNet-{self.args.version} (Baseline) ***")
 
@@ -150,6 +150,8 @@ class XcepTrainer:
             name = None
             if self.args.mbs:
                 name = f'resnet-{self.args.version}(mbs, {dataloader.pin_memory})'
+                if self.args.bn:
+                    name += ' with MBS BN'
             else:
                 name = f'resnet-{self.args.version}(baseline, {dataloader.pin_memory})'
 
@@ -165,7 +167,7 @@ class XcepTrainer:
                 tags.append( f'mbs {self.config.data.microbatchstream.micro_batch_size}' )
 
             wandb.init(
-                project='mbs_paper_results',
+                project='mbs_exp2_results',
                 entity='xypiao97',
                 name=f'{name}',
                 tags=tags,
@@ -200,7 +202,7 @@ class XcepTrainer:
         )
 
         if self.args.mbs:
-            mbs_trainer = MicroBatchStreaming(
+            mbs_trainer, self.model = MicroBatchStreaming(
                 dataloader=train_dataloader,
                 model=self.model,
                 criterion=self.criterion,

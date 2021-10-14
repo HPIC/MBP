@@ -57,7 +57,7 @@ class MBSBatchNorm(_BatchNorm):
         if input.dim() <= 2:
             raise ValueError('[MBS error] expected at least 3D input (got %dD input)' % input.dim())
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def _accumulate(self, input: Tensor):
         '''
             calculate and accumulate Sigma(u-input) & Sigma(u-input**2) until final u-iter.
@@ -69,8 +69,9 @@ class MBSBatchNorm(_BatchNorm):
         dim = [0]
         dim.extend( range( 2, input.dim() ) )
 
-        self.accum_sum += input.sum(dim)
-        self.accum_sum_squares += (input**2).sum(dim)
+        with torch.no_grad():
+            self.accum_sum += input.sum(dim)
+            self.accum_sum_squares += (input**2).sum(dim)
 
         size = input.size().numel() // input.size(1)
         self.accum_size += size
@@ -117,7 +118,7 @@ class MBSBatchNorm(_BatchNorm):
         # Training mode
         self._accumulate(input)
 
-        if self.mbs_block.update_timing:
+        if self.mbs_block._bn:
             self._check_input_dim(input)
             self._normalize()
 
