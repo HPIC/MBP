@@ -32,12 +32,16 @@ class MicroBatchStreaming(_MBSBlock):
         device_index: Optional[int] = None,
         batch_size: int = 1,
         micro_batch_size: int = 1,
+        bn_factor: bool = False,
     ) -> None:
         super().__init__()
         self.device = torch.device(f'cuda:{device_index}')
 
         self.dataloader = dataloader
-        self.module = MBSBatchNorm.wrap_batch_norm(model, self).to(self.device)
+        if bn_factor:
+            self.module = MBSBatchNorm.wrap_batch_norm(model, self).to(self.device)
+        else:
+            self.module = model
         self.criterion = criterion
         self.optimizer = optimizer
         self.scheduler = lr_scheduler

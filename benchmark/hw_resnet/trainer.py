@@ -167,7 +167,7 @@ class XcepTrainer:
                 tags.append( f'mbs {self.config.data.microbatchstream.micro_batch_size}' )
 
             wandb.init(
-                project='mbs_exp2_results',
+                project='mbs_paper_results',
                 entity='xypiao97',
                 name=f'{name}',
                 tags=tags,
@@ -210,7 +210,8 @@ class XcepTrainer:
                 lr_scheduler=None,
                 device_index=self.config.data.gpu.device,
                 batch_size=self.args.batch_size,
-                micro_batch_size=self.args.micro_batch_size
+                micro_batch_size=self.args.micro_batch_size,
+                bn_factor=self.args.bn,
             ).get_trainer()
             for epoch in range(self.config.data.train.epoch):
                 start = time.perf_counter()
