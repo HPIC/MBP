@@ -23,8 +23,9 @@ class VGG(nn.Module):
     def __init__(self, features, num_classes):
         super(VGG, self).__init__()
         self.features = features
+        self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
         self.classifier = nn.Sequential(
-            nn.Linear(512, 4096),
+            nn.Linear(512 *7 *7, 4096),
             nn.ReLU(inplace=True),
             nn.Dropout(),
             nn.Linear(4096, 4096),
@@ -36,6 +37,7 @@ class VGG(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
+        x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         x = self.classifier(x)
         return x
@@ -102,11 +104,13 @@ def vgg13_bn(num_classes):
 
 def vgg16(num_classes):
     """VGG 16-layer model (configuration "D")"""
+    print('16!')
     return VGG(make_layers(cfg['D']), num_classes=num_classes)
 
 
 def vgg16_bn(num_classes):
     """VGG 16-layer model (configuration "D") with batch normalization"""
+    print('16 BN!')
     return VGG(make_layers(cfg['D'], batch_norm=True), num_classes=num_classes)
 
 

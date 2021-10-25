@@ -8,11 +8,11 @@ decay = 0.0005
 
 # Device Related Configurations
 [gpu]
-device = 1
+device = 0
 
 # Train Related Configurations
 [train]
-epoch = 20
+epoch = 1
 
 # Dataset Related Configurations
 [dataset]

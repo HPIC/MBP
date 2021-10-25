@@ -2,8 +2,8 @@ title = "VGG"
 
 # Select model version (16, 19)
 [model]
-normbatch = false
-version = 19
+normbatch = true
+version = 16
 
 # Setting Optimizer
 [optimizer]
@@ -13,11 +13,11 @@ decay = 0.0005
 
 # Device Related Configurations
 [gpu]
-device = 0
+device = 1
 
 # Train Related Configurations
 [train]
-epoch = 300
+epoch = 1
 
 # Dataset Related Configurations
 [dataset]
@@ -27,7 +27,9 @@ epoch = 300
     num_classes = 10
     batch_size = 512
     image_size = 32
-    num_worker = 16
+    num_worker = 0
+    shuffle = false
+    pin_memory = false
 
   [dataset.test]
     type="cifar10"
@@ -35,9 +37,12 @@ epoch = 300
     num_classes = 10
     batch_size = 32
     image_size = 32
-    num_worker = 16
+    num_worker = 0
+    shuffle = false
+    pin_memory = false
 
 # Micro Batch Streaming
 [microbatchstream]
 enable = true
+batchnorm = false
 micro_batch_size = 64

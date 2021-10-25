@@ -122,9 +122,9 @@ class XcepTrainer:
 
         if self.args.mbs:
             print(f">>> micro batch size : {self.args.micro_batch_size}")
-            print(f"*** Training VGG-{self.config.data.model.version} with MBS, Consider BN? {self.args.bn} ***")
+            print(f"*** Training VGG-{self.args.version} with MBS, Consider BN? {self.args.bn} ***")
         else:
-            print(f"*** Training VGG-{self.config.data.model.version} (Baseline) ***")
+            print(f"*** Training VGG-{self.args.version} (Baseline) ***")
 
     def _check_before_running(self, dataloader: DataLoader):
         if self.args.batch_size != dataloader.batch_size:
@@ -137,11 +137,11 @@ class XcepTrainer:
         if self.args.wandb:
             name = None
             if self.args.mbs:
-                name = f'VGG-{self.config.data.model.version}(mbs, {dataloader.pin_memory})'
+                name = f'VGG-{self.args.version}(mbs, {dataloader.pin_memory})'
                 if self.args.bn:
                     name += ' with MBS BN'
             else:
-                name = f'VGG-{self.config.data.model.version}(baseline, {dataloader.pin_memory})'
+                name = f'VGG-{self.args.version}(baseline, {dataloader.pin_memory})'
 
             tags = []
             tags.append( f'batch {dataloader.batch_size}' )
@@ -182,7 +182,7 @@ class XcepTrainer:
         # build model and loss, optimizer
         self.model = select_model(
             self.config.data.model.normbatch,
-            self.config.data.model.version,
+            self.args.version,
             self.args.num_classes
         ).to(device)
         self.criterion = nn.CrossEntropyLoss().to(device)
