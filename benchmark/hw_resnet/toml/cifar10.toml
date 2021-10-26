@@ -12,7 +12,7 @@ device = 0
 
 # Train Related Configurations
 [train]
-epoch = 1
+epoch = 100
 
 # Dataset Related Configurations
 [dataset]
@@ -24,7 +24,7 @@ epoch = 1
     image_size = 32
     num_workers = 0
     shuffle = false
-    pin_memory = true
+    pin_memory = false
 
   [dataset.test]
     type="cifar10"

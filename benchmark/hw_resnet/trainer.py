@@ -2,7 +2,7 @@ import itertools
 import math, random
 import json
 import time
-from typing import List
+from typing import Dict, List
 from torch.utils.data import dataloader
 
 import wandb
@@ -22,6 +22,8 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data.dataloader import DataLoader
 from util.config_parser import ConfigParser, DotDict
 from util.util import ensure_dir, ensure_file_can_create, prepare_device
+from torch.nn.modules import Module
+from torch.nn.modules.batchnorm import _NormBase, _BatchNorm
 
 # Get Micro-batch streaming.
 from mbs.micro_batch_streaming import MicroBatchStreaming
@@ -39,6 +41,8 @@ class XcepTrainer:
         self.max_top1 = 0
         self.max_top5 = 0
         self.epoch_avg_time = []
+
+        self.bn_layer = {}
 
     @classmethod
     def _save_state_dict(cls, state_dict: dict, path: str) -> None:
@@ -60,24 +64,6 @@ class XcepTrainer:
         else:
             with open(f"./loss/baseline_{batch_size}_{dataset_info}_seed_{random_seed}.json", "w") as file:
                 json.dump(log, file, indent=4)
-
-    # @classmethod
-    # def _get_data_loader(cls, config: DotDict, args, is_train: bool) -> DataLoader:
-    #     dataset = get_dataset(
-    #         path=config.path + config.type,
-    #         dataset_type=config.type,
-    #         config=config,
-    #         args=args,
-    #         is_train=is_train
-    #     )
-    #     dataloader = DataLoader(
-    #         dataset,
-    #         batch_size=config.batch_size,
-    #         num_workers=config.num_worker,
-    #         shuffle=config.shuffle,
-    #         pin_memory=config.pin_memory,
-    #     )
-    #     return dataloader
 
     @classmethod
     def _get_train_dataloader(cls, config: DotDict, args) -> DataLoader:
@@ -213,12 +199,18 @@ class XcepTrainer:
                 micro_batch_size=self.args.micro_batch_size,
                 bn_factor=self.args.bn,
             ).get_trainer()
+
             for epoch in range(self.config.data.train.epoch):
+                # Train
                 start = time.perf_counter()
                 mbs_trainer.train()
                 end = time.perf_counter()
                 self.epoch_avg_time.append( end - start )
+
+                # Validation
                 self._val_accuracy(epoch, val_dataloader, device)
+
+                # Update status to WandB
                 if self.args.wandb:
                     wandb.log( {'train loss': mbs_trainer.get_loss()}, step=epoch )
                     wandb.log( {'epoch time' : sum(self.epoch_avg_time)/len(self.epoch_avg_time)}, step=epoch)
@@ -229,16 +221,41 @@ class XcepTrainer:
                         f"loss : {mbs_trainer.get_loss()}",
                         # end='\r'
                     )
+            # Check BN layer
+            layer_num = 0
+            self._check_bn_layer( self.model, self.bn_layer, layer_num )
         else:
             for epoch in range(self.config.data.train.epoch):
+                # Train
                 self._train_epoch(epoch, train_dataloader, device)
+
+                # Validation
                 self._val_accuracy(epoch, val_dataloader, device)
+
+                # Update status to WandB
                 print(  f"top1:{self.max_top1}",
                         f"top5:{self.max_top5}",
                         f"epoch time: {sum(self.epoch_avg_time)/len(self.epoch_avg_time)}",
                         f"loss : {self.epoch_loss}",
                         # end='\r',
                     )
+            # Check BN layer
+            layer_num = 0
+            self._check_bn_layer( self.model, self.bn_layer, layer_num )
+
+        # Save bn layer
+        save_name = './bn_layer'
+        if self.args.mbs:
+            if self.args.bn:
+                save_name += f'/mbs_bn_batch_{self.args.batch_size}_'
+            else:
+                save_name += f'/mbs_batch_{self.args.batch_size}_'
+            save_name += f'ubatch_size_{self.args.micro_batch_size}_'
+        else:
+            save_name += f'/baseline_batch_{self.args.batch_size}_'
+        save_name += f'seed_{self.args.random_seed}_exp_{self.args.exp}.json'
+        with open(save_name, 'w') as file:
+            json.dump(self.bn_layer, file, indent=4)
 
         # for epoch in self.train_loss:
         #     self.val_accuracy[epoch]['train loss'] = self.train_loss[epoch]
@@ -398,6 +415,17 @@ class XcepTrainer:
         for layer, para in self.model.named_parameters():
             magnitude : torch.Tensor = torch.sum( para.grad )
             self.magnitude[epoch + 1][layer] = magnitude.item()
+
+    @classmethod
+    def _check_bn_layer(cls, module: Module, save_json: Dict, layer_num: int):
+        for name, mod in module.named_children():
+            if isinstance(mod, _BatchNorm):
+                layer_num += 1
+                save_json[f'{layer_num}'] = {}
+                save_json[f'{layer_num}']['mean'] = mod.running_mean.sum().item()
+                save_json[f'{layer_num}']['var'] = mod.running_var.sum().item()
+            layer_num = cls._check_bn_layer(mod, save_json, layer_num)
+        return layer_num
 
 def train(config: ConfigParser, args):
     trainer = XcepTrainer(config, args)
