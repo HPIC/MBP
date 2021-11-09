@@ -26,7 +26,7 @@ from torch.nn.modules import Module
 from torch.nn.modules.batchnorm import _NormBase, _BatchNorm
 
 # Get Micro-batch streaming.
-from mbs.micro_batch_streaming import MicroBatchStreaming
+from mbs import MicroBatchStreaming
 
 class XcepTrainer:
     def __init__(self, config: ConfigParser, args) -> None:
@@ -247,12 +247,12 @@ class XcepTrainer:
         save_name = './bn_layer'
         if self.args.mbs:
             if self.args.bn:
-                save_name += f'/mbs_bn_batch_{self.args.batch_size}_'
+                save_name += f'/v{self.args.version}_mbs_bn_batch_{self.args.batch_size}_'
             else:
-                save_name += f'/mbs_batch_{self.args.batch_size}_'
+                save_name += f'/v{self.args.version}_mbs_batch_{self.args.batch_size}_'
             save_name += f'ubatch_size_{self.args.micro_batch_size}_'
         else:
-            save_name += f'/baseline_batch_{self.args.batch_size}_'
+            save_name += f'/v{self.args.version}_baseline_batch_{self.args.batch_size}_'
         save_name += f'seed_{self.args.random_seed}_exp_{self.args.exp}.json'
         with open(save_name, 'w') as file:
             json.dump(self.bn_layer, file, indent=4)
@@ -419,7 +419,7 @@ class XcepTrainer:
     @classmethod
     def _check_bn_layer(cls, module: Module, save_json: Dict, layer_num: int):
         for name, mod in module.named_children():
-            if isinstance(mod, _BatchNorm):
+            if isinstance(mod, _NormBase):
                 layer_num += 1
                 save_json[f'{layer_num}'] = {}
                 save_json[f'{layer_num}']['mean'] = mod.running_mean.sum().item()
