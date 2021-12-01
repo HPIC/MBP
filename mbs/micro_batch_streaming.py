@@ -19,6 +19,7 @@ class _MBSBlock:
     def __init__(
         self,
     ) -> None:
+        self._init = True
         self._bn = False
 
 class MicroBatchStreaming(_MBSBlock):
@@ -108,6 +109,8 @@ class MicroBatchStreaming(_MBSBlock):
 
             self.optimizer.step()
             self.epoch_loss += mini_loss
+
+            self._init = self._init and False
 
     def get_loss(self):
         return self.epoch_loss / self.dataloader.__len__()

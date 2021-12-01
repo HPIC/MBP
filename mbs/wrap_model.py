@@ -119,7 +119,6 @@ class MBSBatchNorm(_BatchNorm):
         self._accumulate(input)
 
         if self.mbs_block._bn:
-            self._check_input_dim(input)
             self._normalize()
 
         return F.batch_norm(
