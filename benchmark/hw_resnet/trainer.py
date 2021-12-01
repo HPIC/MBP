@@ -26,7 +26,7 @@ from torch.nn.modules import Module
 from torch.nn.modules.batchnorm import _NormBase, _BatchNorm
 
 # Get Micro-batch streaming.
-from mbs import MicroBatchStreaming
+from mbs import MicroBatchStreaming, MBSBatchNorm
 
 class XcepTrainer:
     def __init__(self, config: ConfigParser, args) -> None:
@@ -141,6 +141,8 @@ class XcepTrainer:
             else:
                 name = f'resnet-{self.args.version}(baseline, {dataloader.pin_memory})'
 
+            name += '_hera'
+
             tags = []
             tags.append( f'batch {dataloader.batch_size}' )
             tags.append( f'image {self.config.data.dataset.train.image_size}' )
@@ -148,6 +150,7 @@ class XcepTrainer:
             tags.append( f'pin memory {dataloader.pin_memory}' )
             tags.append( f'cifar {self.args.num_classes}')
             tags.append( f'exp {self.args.exp}')
+            tags.append( f'micro {self.args.micro_batch_size}')
 
             if self.args.mbs and self.config.data.microbatchstream.enable:
                 tags.append( f'mbs {self.config.data.microbatchstream.micro_batch_size}' )
@@ -223,7 +226,11 @@ class XcepTrainer:
                     )
             # Check BN layer
             layer_num = 0
-            self._check_bn_layer( self.model, self.bn_layer, layer_num )
+            if self.args.bn:
+                bn_object = MBSBatchNorm
+            else:
+                bn_object = _BatchNorm
+            self._check_bn_layer( self.model, bn_object, self.bn_layer, layer_num )
         else:
             for epoch in range(self.config.data.train.epoch):
                 # Train
@@ -241,7 +248,7 @@ class XcepTrainer:
                     )
             # Check BN layer
             layer_num = 0
-            self._check_bn_layer( self.model, self.bn_layer, layer_num )
+            self._check_bn_layer( self.model, _BatchNorm, self.bn_layer, layer_num )
 
         # Save bn layer
         save_name = './bn_layer'
@@ -417,14 +424,14 @@ class XcepTrainer:
             self.magnitude[epoch + 1][layer] = magnitude.item()
 
     @classmethod
-    def _check_bn_layer(cls, module: Module, save_json: Dict, layer_num: int):
+    def _check_bn_layer(cls, module: Module, object, save_json: Dict, layer_num: int):
         for name, mod in module.named_children():
-            if isinstance(mod, _NormBase):
+            if isinstance(mod, object):
                 layer_num += 1
                 save_json[f'{layer_num}'] = {}
                 save_json[f'{layer_num}']['mean'] = mod.running_mean.sum().item()
                 save_json[f'{layer_num}']['var'] = mod.running_var.sum().item()
-            layer_num = cls._check_bn_layer(mod, save_json, layer_num)
+            layer_num = cls._check_bn_layer(mod, object, save_json, layer_num)
         return layer_num
 
 def train(config: ConfigParser, args):
