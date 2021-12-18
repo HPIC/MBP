@@ -105,8 +105,8 @@ class UNet(nn.Module):
             x = up(x, outs[-i - 1])
 
         x = self.conv1x1(x)
-        return x
-        # return torch.sigmoid(x)
+        # return x
+        return torch.sigmoid(x)
         # return x.softmax(dim=1)
 
 def unet_1156():
