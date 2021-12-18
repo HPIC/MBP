@@ -1,3 +1,4 @@
+import torch
 from torch import BoolStorage
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
@@ -11,7 +12,7 @@ import datetime
 import re
 import math
 
-def get_network(args, device):
+def get_network(args):
     if args.net == 'unet1156':
         from model import unet_1156
         net = unet_1156()
@@ -20,20 +21,47 @@ def get_network(args, device):
         from model import unet_3156
         net = unet_3156()
 
-    if args.gpu: #use_gpu
-        net = net.cuda(device)
-        
     return net
 
 
-def get_training_dataloader(mean, std, batch_size=16, num_workers=6, shuffle=True, pin_memory=True):
+def get_dataset(
+    mean: float, std: float, 
+    scale: float = 1.0
+):
     image_transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize(mean, std)
+        transforms.Normalize(mean, std),
+        transforms.Resize( ( int(1280 * scale), int(1918 * scale) ) )
     ])
 
     mask_transform = transforms.Compose([
-        transforms.ToTensor()
+        transforms.ToTensor(),
+        transforms.Resize( ( int(1280 * scale), int(1918 * scale) ) )
+    ])
+
+    return dataset.CarvanaTrain(
+            root='./data', 
+            train=True, 
+            image_transform=image_transform, 
+            mask_transform=mask_transform
+        )
+
+
+def get_training_dataloader(
+    mean: float, std: float, 
+    batch_size: int =16, num_workers: int =6, 
+    shuffle: bool =True, pin_memory: bool =True, 
+    scale: float = 1.0
+):
+    image_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std),
+        transforms.Resize( ( int(1280 * scale), int(1918 * scale) ) )
+    ])
+
+    mask_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Resize( ( int(1280 * scale), int(1918 * scale) ) )
     ])
 
     carvana_training = dataset.CarvanaTrain(root='./data', train=True, image_transform=image_transform, mask_transform=mask_transform)
@@ -42,10 +70,16 @@ def get_training_dataloader(mean, std, batch_size=16, num_workers=6, shuffle=Tru
     return carvana_training_loader
 
 
-def get_test_dataloader(mean, std, batch_size=16, num_workers=6, shuffle=True, pin_memory=True):
+def get_test_dataloader(
+    mean: float, std: float, 
+    batch_size: int =16, num_workers: int =6, 
+    shuffle: bool =True, pin_memory: bool =True, 
+    scale: float = 1.0
+):
     image_transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize(mean, std)
+        transforms.Normalize(mean, std),
+        transforms.Resize( ( int(1280 * scale), int(1918 * scale) ) )
     ])
 
     carvana_testing = dataset.CarvanaTest(root='./data', train=False, image_transform=image_transform)

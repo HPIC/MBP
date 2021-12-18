@@ -30,6 +30,7 @@ class MicroBatchStreaming(_MBSBlock):
         criterion: Module,
         optimizer: Optimizer,
         lr_scheduler: _LRScheduler = None,
+        warmup_factor: Optional[int] = None,
         device_index: Optional[int] = None,
         batch_size: int = 1,
         micro_batch_size: int = 1,
@@ -45,7 +46,10 @@ class MicroBatchStreaming(_MBSBlock):
             self.module = model
         self.criterion = criterion
         self.optimizer = optimizer
+
+        ''' Warmup arguments '''
         self.scheduler = lr_scheduler
+        self.warmup_factor = warmup_factor
 
         self.batch_size = batch_size
         self.micro_batch = micro_batch_size
@@ -111,6 +115,9 @@ class MicroBatchStreaming(_MBSBlock):
             self.epoch_loss += mini_loss
 
             self._init = self._init and False
+
+            if idx <= self.warmup_factor and self.scheduler != None:
+                self.scheduler.step()
 
     def get_loss(self):
         return self.epoch_loss / self.dataloader.__len__()

@@ -1,7 +1,6 @@
 from skimage.io import imread
 from torch.utils.data import Dataset
 import os
-from pathlib import Path
 
 class CarvanaTrain(Dataset):
     def __init__(
@@ -26,7 +25,8 @@ class CarvanaTrain(Dataset):
         target_ID = self.targets[index]
 
         # Load input and target
-        image, mask = imread(os.path.join(self.input_path, input_ID)), imread(os.path.join(self.target_path, target_ID))
+        image = imread(os.path.join(self.input_path, input_ID))
+        mask = imread(os.path.join(self.target_path, target_ID))
 
         # Preprocessing
         if self.image_transform is not None:
