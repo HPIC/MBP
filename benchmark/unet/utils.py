@@ -1,9 +1,9 @@
 from typing import List
 import torch
-from torch import BoolStorage
-from torch import overrides
+
+import torch.nn.functional as F
+from torch import Tensor
 from torch.utils.data.dataloader import DataLoader
-from torch.utils.data.dataset import Dataset
 from torchvision import transforms
 from torch.optim.lr_scheduler import _LRScheduler
 
@@ -14,7 +14,31 @@ import datetime
 import re
 import math
 
-def get_network(name: str):
+
+'''
+    Add new code
+    ---
+'''
+def dice_loss(pred: Tensor, mask: Tensor, smooth: int = 1e-5):
+    bce_output = F.binary_cross_entropy_with_logits(
+        pred, mask, reduction="sum"
+    )
+    pred = torch.sigmoid(pred)
+    intersection = (pred * mask).sum(dim=(2,3))
+    union = pred.sum(dim=(2,3)) + mask.sum(dim=(2,3))
+    
+    # dice coefficient
+    dice = 2.0 * (intersection + smooth) / (union + smooth)
+    
+    # dice loss
+    dice_loss = 1.0 - dice
+    
+    # total loss
+    loss: Tensor = bce_output + dice_loss
+    return loss.sum(), dice.sum() * 100
+
+
+def get_network_name(name: str):
     if name == 'unet1156':
         from model import unet_1156
         return unet_1156()
@@ -23,15 +47,6 @@ def get_network(name: str):
         from model import unet_3156
         return unet_3156()
 
-# @overrides
-# def get_network(args):
-#     if args.net == 'unet1156':
-#         from model import unet_1156
-#         return unet_1156()
-
-#     if args.net == 'unet3156':
-#         from model import unet_3156
-#         return unet_3156()
 
 def get_dataset(
     mean: List[float], std: List[float], 
@@ -45,7 +60,6 @@ def get_dataset(
 
     mask_transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize(0.0, 1.0),
         transforms.Resize( ( int(1280 * scale), int(1918 * scale) ) )
     ])
 
@@ -54,6 +68,21 @@ def get_dataset(
             image_transform=image_transform, 
             mask_transform=mask_transform
         )
+
+
+'''
+    Original Code
+    ---
+'''
+
+def get_network(args):
+    if args.net == 'unet1156':
+        from model import unet_1156
+        return unet_1156()
+
+    if args.net == 'unet3156':
+        from model import unet_3156
+        return unet_3156()
 
 
 def get_training_dataloader(
