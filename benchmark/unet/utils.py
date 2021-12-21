@@ -1,6 +1,7 @@
 from typing import List
 import torch
 from torch import BoolStorage
+from torch import overrides
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 from torchvision import transforms
@@ -13,17 +14,24 @@ import datetime
 import re
 import math
 
-def get_network(args):
-    if args.net == 'unet1156':
+def get_network(name: str):
+    if name == 'unet1156':
         from model import unet_1156
-        net = unet_1156()
+        return unet_1156()
 
-    if args.net == 'unet3156':
+    if name == 'unet3156':
         from model import unet_3156
-        net = unet_3156()
+        return unet_3156()
 
-    return net
+# @overrides
+# def get_network(args):
+#     if args.net == 'unet1156':
+#         from model import unet_1156
+#         return unet_1156()
 
+#     if args.net == 'unet3156':
+#         from model import unet_3156
+#         return unet_3156()
 
 def get_dataset(
     mean: List[float], std: List[float], 
@@ -42,7 +50,7 @@ def get_dataset(
     ])
 
     return dataset.CarvanaDataset(
-            root='./data',
+            root='data',
             image_transform=image_transform, 
             mask_transform=mask_transform
         )
