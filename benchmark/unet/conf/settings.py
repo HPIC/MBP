@@ -1,11 +1,13 @@
 from datetime import datetime
 #total training epoches
-EPOCH = 150
+EPOCH = 5
 MILESTONES = [40, 80, 120]
 
 #mean and std of cifar100 dataset
-CARVANA_TRAIN_MEAN = (0.485, 0.456, 0.406)
-CARVANA_TRAIN_STD = (0.229, 0.224, 0.225)
+# CARVANA_TRAIN_MEAN = (0.485, 0.456, 0.406)
+# CARVANA_TRAIN_STD = (0.229, 0.224, 0.225)
+CARVANA_MEAN = (0.0, 0.0, 0.0)
+CARVANA_STD = (1.0, 1.0, 1.0)
 
 #directory to save weights file
 CHECKPOINT_PATH = 'checkpoint'

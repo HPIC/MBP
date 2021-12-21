@@ -89,8 +89,8 @@ def train(
         #update training loss for each iteration
         # writer.add_scalar('Train/loss', loss.item(), n_iter)
 
-        if epoch <= args.warm:
-            scheduler.step()
+        # if epoch <= args.warm:
+        #     scheduler.step()
 
     # for name, param in net.named_parameters():
     #     layer, attr = os.path.splitext(name)
@@ -101,7 +101,6 @@ def train(
     print('\nepoch {} training time consumed: {:.2f}s'.format(epoch, finish - start))
     return losses / len(carvana_training_loader)
 
-@torch.no_grad()
 def eval_training(
     args,
     epoch: int,
@@ -110,24 +109,43 @@ def eval_training(
     criterion: _Loss,
     tb=True
 ):
+    test_loss = 0.0 # cost function error
+    correct = 0.0
+    train_num = 0
+    corrects = 0.0
 
     start = time.time()
     model.eval()
+    with torch.no_grad():
+        for (images, labels) in dataloader:
+            images: torch.Tensor
+            labels: torch.Tensor
 
-    test_loss = 0.0 # cost function error
-    correct = 0.0
+            if args.gpu:
+                images = images.cuda(device)
+                labels = labels.cuda(device)
 
-    for (images, labels) in dataloader:
-        if args.gpu:
-            images = images.cuda(device)
-            labels = labels.cuda(device)
+            outputs: torch.Tensor = model(images)
+            loss: torch.Tensor = criterion(outputs, labels)
 
-        outputs: torch.Tensor = model(images)
-        loss: torch.Tensor = criterion(outputs, labels)
+            test_loss += loss.item()
+            _, preds = outputs.max(1)
 
-        test_loss += loss.item()
-        _, preds = outputs.max(1)
-        correct += preds.eq(labels).sum()
+            equal_factor = preds.eq(labels).sum()
+            train_num += labels.nelement()
+            correct += equal_factor
+            corrects = 100 * ( correct * train_num )
+
+            # for (pred, label) in zip(preds, labels):
+            #     equal = pred.eq(label).sum()
+            #     corrects.append(equal / label.sum())
+            # len_corrects = len( corrects )
+            # correct += sum( corrects ) / len_corrects
+
+            # equal_factor = preds.eq(labels).sum()
+            # correct += equal_factor / labels.sum()
+            # preds = dice_calc( labels, outputs )
+            # correct += preds
 
     finish = time.time()
     # if args.gpu:
@@ -136,8 +154,8 @@ def eval_training(
     print('Evaluating Network.....')
     print('Test set: Epoch: {}, Average loss: {:.4f}, Accuracy: {:.4f}, Time consumed:{:.2f}s'.format(
         epoch,
-        test_loss / len(carvana_test_loader),
-        correct.float() / len(carvana_test_loader),
+        test_loss / len(dataloader),
+        corrects,
         finish - start
     ))
     print()
@@ -147,9 +165,12 @@ def eval_training(
     #     writer.add_scalar('Test/Average loss', test_loss / len(carvana_test_loader.dataset), epoch)
     #     writer.add_scalar('Test/Accuracy', correct.float() / len(carvana_test_loader.dataset), epoch)
 
-    return correct.float() / len(carvana_test_loader)
+    return corrects
 
 
+def dice_calc(origin: torch.Tensor, prediction: torch.Tensor):
+    pred = ( prediction >= 0.5 ).float()
+    return (2 * (pred * origin).sum()) / ((pred + origin).sum() + 1e-8)
 
 
 
@@ -165,7 +186,7 @@ if __name__ == '__main__':
     parser.add_argument('-lr', type=float, default=0.1, help='initial learning rate')
     parser.add_argument('-resume', action='store_true', default=False, help='resume training')
     parser.add_argument('-image_factor', type=float, default=1.0, help='the factor for resizing image size')
-    parser.add_argument('-val_factor', type=float, default=0.2, help='Setup the factor for validation')
+    parser.add_argument('-val_factor', type=float, default=0.1, help='Setup the factor for validation')
 
     ''' Micro-Batch Streaming Arguments '''
     parser.add_argument('-mbs', action='store_true', default=False, help='training model with MBS')
@@ -215,8 +236,8 @@ if __name__ == '__main__':
     device = torch.device(_device)
     net = get_network(args).cuda(device)
     carvana_dataset = get_dataset(
-        settings.CARVANA_TRAIN_MEAN,
-        settings.CARVANA_TRAIN_STD,
+        settings.CARVANA_MEAN,
+        settings.CARVANA_STD,
         scale=args.image_factor
     )
     n_val = int( len(carvana_dataset) * args.val_factor )
@@ -268,10 +289,11 @@ if __name__ == '__main__':
 
     # loss_function = nn.CrossEntropyLoss().cuda(device)
     loss_function = nn.BCEWithLogitsLoss().cuda(device)
-    optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
-    train_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=settings.MILESTONES, gamma=0.2) #learning rate decay
-    iter_per_epoch = len(carvana_training_loader)
-    warmup_scheduler = WarmUpLR(optimizer, iter_per_epoch * args.warm)
+    optimizer = optim.Adam(net.parameters(), lr=args.lr)
+    # optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
+    # train_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=settings.MILESTONES, gamma=0.2) #learning rate decay
+    # iter_per_epoch = len(carvana_training_loader)
+    # warmup_scheduler = WarmUpLR(optimizer, iter_per_epoch * args.warm)
 
     if (args.mbs or args.mbs_bn):
         mbs_trainer, net = MicroBatchStreaming(
@@ -279,8 +301,8 @@ if __name__ == '__main__':
             model=net,
             criterion=loss_function,
             optimizer=optimizer,
-            lr_scheduler=warmup_scheduler,
-            warmup_factor=args.warm,
+            lr_scheduler=None,
+            warmup_factor=None,
             device_index=args.gpu_device,
             batch_size=args.b,
             micro_batch_size=args.usize,
@@ -340,8 +362,8 @@ if __name__ == '__main__':
     ''' Training model '''
     if (args.mbs or args.mbs_bn):
         for epoch in range(1, settings.EPOCH + 1):
-            if epoch > args.warm:
-                train_scheduler.step(epoch)
+            # if epoch > args.warm:
+            #     train_scheduler.step(epoch)
 
             if args.resume:
                 if epoch <= resume_epoch:
@@ -367,17 +389,18 @@ if __name__ == '__main__':
                 torch.save(net.state_dict(), weights_path)
     else:
         for epoch in range(1, settings.EPOCH + 1):
-            if epoch > args.warm:
-                train_scheduler.step(epoch)
+            # if epoch > args.warm:
+            #     train_scheduler.step(epoch)
 
             if args.resume:
                 if epoch <= resume_epoch:
                     continue
 
-            epoch_loss = train(args, epoch, carvana_training_loader, net, loss_function, optimizer, warmup_scheduler)
-            acc = eval_training(args, epoch, carvana_test_loader, net, loss_function)
+            epoch_loss = train(args, epoch, carvana_training_loader, net, loss_function, optimizer, None)
+            acc, val_loss = eval_training(args, epoch, carvana_test_loader, net, loss_function)
             if args.wandb:
                 wandb.log( {'train loss': epoch_loss}, step=epoch )
+                wandb.log( {'val loss': val_loss}, step=epoch  )
                 wandb.log( {'accuracy': acc}, step=epoch )
 
             #start to save best performance model after learning rate decay to 0.01

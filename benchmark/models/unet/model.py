@@ -57,7 +57,7 @@ class Up(nn.Module):
         diffX = x2.size()[3] - x1.size()[3]
         x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
                         diffY // 2, diffY - diffY // 2])
-        x = torch.cat([x1, x2], dim=1)
+        x = torch.cat( (x1, x2), dim=1)
         return self.conv(x)
 
 
@@ -105,9 +105,7 @@ class UNet(nn.Module):
             x = up(x, outs[-i - 1])
 
         x = self.conv1x1(x)
-        # return x
         return torch.sigmoid(x)
-        # return x.softmax(dim=1)
 
 def unet_1156():
     return UNet(in_channels=1, out_channels=1, depth=5, cf=6)

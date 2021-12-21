@@ -1,3 +1,4 @@
+from typing import List
 import torch
 from torch import BoolStorage
 from torch.utils.data.dataloader import DataLoader
@@ -25,7 +26,7 @@ def get_network(args):
 
 
 def get_dataset(
-    mean: float, std: float, 
+    mean: List[float], std: List[float], 
     scale: float = 1.0
 ):
     image_transform = transforms.Compose([
@@ -36,12 +37,12 @@ def get_dataset(
 
     mask_transform = transforms.Compose([
         transforms.ToTensor(),
+        transforms.Normalize(0.0, 1.0),
         transforms.Resize( ( int(1280 * scale), int(1918 * scale) ) )
     ])
 
-    return dataset.CarvanaTrain(
-            root='./data', 
-            train=True, 
+    return dataset.CarvanaDataset(
+            root='./data',
             image_transform=image_transform, 
             mask_transform=mask_transform
         )
