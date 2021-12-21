@@ -2,7 +2,7 @@ import os
 import argparse
 import random
 import time
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 import torch.nn as nn
@@ -16,6 +16,7 @@ from torch.utils.data.dataset import random_split
 import model
 import dataset
 from utils import (
+    DiceLoss,
     dice_loss,
     get_network,
     get_dataset,
@@ -39,7 +40,7 @@ def train(
     device: torch.device,
     dataloader: DataLoader,
     model: nn.Module,
-    criterion: dice_loss,
+    criterion: Union[dice_loss, DiceLoss],
     optimizer: Optimizer,
 ):
     loss: Tensor
@@ -79,7 +80,7 @@ def eval_training(
     device: torch.device,
     dataloader: DataLoader,
     model: nn.Module,
-    criterion: dice_loss
+    criterion: Union[dice_loss, DiceLoss],
 ):
     loss: Tensor
     dice: Tensor
@@ -199,7 +200,8 @@ if __name__ == '__main__':
     )
 
     net = get_network(args).to(device)
-    loss_function = dice_loss
+    # loss_function = dice_loss
+    loss_function = DiceLoss().to(device)
     optimizer = optim.Adam(net.parameters(), lr=args.lr)
 
     if (args.mbs or args.mbs_bn):

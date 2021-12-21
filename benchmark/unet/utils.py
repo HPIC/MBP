@@ -3,6 +3,7 @@ import torch
 
 import torch.nn.functional as F
 from torch import Tensor
+from torch.nn.modules import Module
 from torch.utils.data.dataloader import DataLoader
 from torchvision import transforms
 from torch.optim.lr_scheduler import _LRScheduler
@@ -36,6 +37,23 @@ def dice_loss(pred: Tensor, mask: Tensor, smooth: int = 1e-5):
     # total loss
     loss: Tensor = bce_output + dice_loss
     return loss.sum(), dice.sum() * 100
+
+class DiceLoss(Module):
+    def __init__(self, weight=None, size_average=True) -> None:
+        super().__init__()
+    
+    def forward(self, inputs: Tensor, masks: Tensor, smooth=1):
+        inputs = F.sigmoid( inputs )
+        inputs = inputs.view(-1)
+        masks = masks.view(-1)
+
+        intersection = ( inputs * masks ).sum()
+        dice = ( 2. * intersection + smooth )/(inputs.sum() + masks.sum() + smooth)
+        dice_loss = 1 - dice
+        bce = F.binary_cross_entropy(inputs, masks, reduction="mean")
+        loss = bce + dice_loss
+
+        return loss, dice_loss * 100
 
 
 def get_network_name(name: str):
