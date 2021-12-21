@@ -38,6 +38,7 @@ def dice_loss(pred: Tensor, mask: Tensor, smooth: int = 1e-5):
     loss: Tensor = bce_output + dice_loss
     return loss.sum(), dice.sum() * 100
 
+
 class DiceLoss(Module):
     def __init__(self, weight=None, size_average=True) -> None:
         super().__init__()
@@ -53,7 +54,7 @@ class DiceLoss(Module):
         bce = F.binary_cross_entropy(inputs, masks, reduction="mean")
         loss = bce + dice_loss
 
-        return loss, dice_loss * 100
+        return loss, dice * 100
 
 
 def get_network_name(name: str):
