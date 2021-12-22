@@ -57,7 +57,7 @@ class DiceLoss(Module):
         super().__init__()
     
     def forward(self, inputs: Tensor, masks: Tensor, smooth=1):
-        inputs = torch.sigmoid( inputs )
+        # inputs = torch.sigmoid( inputs )
         # inputs = inputs.view(-1)
         # masks = masks.view(-1)
 
@@ -69,8 +69,8 @@ class DiceLoss(Module):
         dice: Tensor = ( 2 * intersection + smooth ) / ( union + smooth )
 
         loss: Tensor = 1 - dice
-        bce: Tensor = F.binary_cross_entropy_with_logits(inputs, masks, reduction="sum")
-        loss += bce
+        # bce: Tensor = F.binary_cross_entropy_with_logits(inputs, masks, reduction="mean")
+        # loss += bce
 
         return loss.sum()
 
@@ -79,17 +79,24 @@ class DiceBCELoss(Module):
         super().__init__()
     
     def forward(self, inputs: Tensor, masks: Tensor, smooth=1):
-        inputs = torch.sigmoid( inputs )
-        inputs = inputs.view(-1)
-        masks = masks.view(-1)
+        # inputs = torch.sigmoid( inputs )
+        # inputs = inputs.view(-1)
+        # masks = masks.view(-1)
 
-        intersection = ( inputs * masks ).sum()
-        dice = ( 2. * intersection + smooth )/(inputs.sum() + masks.sum() + smooth)
-        dice_loss = 1 - dice
-        bce = F.binary_cross_entropy(inputs, masks, reduction="mean")
-        loss = bce + dice_loss
+        # intersection = ( inputs * masks ).sum()
+        # dice = ( 2. * intersection + smooth )/(inputs.sum() + masks.sum() + smooth)
+        # dice_loss = 1 - dice
+        # bce = F.binary_cross_entropy(inputs, masks, reduction="mean")
+        # loss = bce + dice_loss
 
-        return loss, dice * 100
+        intersection: Tensor = ( inputs * masks ).sum( dim=(2,3) )
+        union: Tensor = inputs.sum( dim=(2,3) ) + masks.sum( dim=(2,3) )
+        dice: Tensor = ( 2 * intersection + smooth ) / ( union + smooth )
+        loss: Tensor = 1 - dice
+        bce: Tensor = F.binary_cross_entropy_with_logits(inputs, masks, reduction="mean")
+        loss += bce
+    
+        return loss.sum(), dice.sum()
 
 def get_network_name(name: str):
     if name == 'unet1156':

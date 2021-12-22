@@ -13,10 +13,14 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import random_split
 
+import plotext as plx
+
 import model
 import dataset
 from utils import (
+    plotting,
     DiceLoss,
+    DiceBCELoss,
     dice_loss,
     get_network,
     get_dataset,
@@ -35,52 +39,67 @@ import wandb
 from conf import settings
 
 
+train_losses = []
+init_loss = 0.0
+
 def train(
     epoch: int, total_epoch: int,
     device: torch.device,
     dataloader: DataLoader,
     model: nn.Module,
-    criterion: Union[dice_loss, DiceLoss],
+    criterion: Union[DiceBCELoss, DiceLoss, _Loss],
     optimizer: Optimizer,
 ):
     loss: Tensor
     dice: Tensor
-    train_losses = []
     train_dices = []
     dataloader_len = len(dataloader)
 
     start = time.time()
     model.train()
+
     for idx, (inputs, masks) in enumerate(dataloader):
         inputs: Tensor = inputs.to(device)
         masks: Tensor = masks.to(device)
 
         optimizer.zero_grad()
         preds: Tensor = model(inputs)
+        # if isinstance(criterion, (_Loss, DiceLoss)):
+        #     loss = criterion(preds, masks)
+        # else:
+        #     loss, dice = criterion(preds, masks)
         loss, dice = criterion(preds, masks)
         loss.backward()
         optimizer.step()
 
         train_losses.append( loss.item() )
         train_dices.append( dice.item() )
+        if idx == 0:
+            init_loss = loss.item()
 
         print(
             f"[{epoch}/{total_epoch}][{idx+1}/{dataloader_len}]  ",
-            f"train loss: {(sum(train_losses)/len(train_losses)):.3f}  ",
-            f"train acc: {(sum(train_dices)/len(train_dices)):.2f} %  ",
-            f"image size: {inputs.size()}",
+            f"init loss: {init_loss:.3f}  ",
+            f"cur loss: {(sum(train_losses)/len(train_losses)):.3f}  ",
+            f"decrease rate: {init_loss - (sum(train_losses)/len(train_losses)):.3f}",
+            f"train acc: {(sum(train_dices)/len(train_dices)) * 100:.2f} %  ",
             end='\r'
         )
     finish = time.time()
     print('\nepoch {} training time consumed: {:.2f}s'.format(epoch, finish - start))
-    return (sum(train_losses)/len(train_losses)), (sum(train_dices)/len(train_dices))
+    plotting( train_losses )
+
+    if isinstance(criterion, (_Loss, DiceLoss)):
+        return (sum(train_losses)/len(train_losses)), None
+    else:
+        return (sum(train_losses)/len(train_losses)), (sum(train_dices)/len(train_dices))
 
 
 def eval_training(
     device: torch.device,
     dataloader: DataLoader,
     model: nn.Module,
-    criterion: Union[dice_loss, DiceLoss],
+    criterion: Union[dice_loss, DiceLoss] = DiceLoss(),
 ):
     loss: Tensor
     dice: Tensor
@@ -94,18 +113,28 @@ def eval_training(
             masks: Tensor = masks.to(device)
 
             preds: Tensor = model(inputs)
+            # if isinstance( criterion, (DiceLoss, _Loss) ):
+            #     loss = criterion(preds, masks)
+            #     test_losses.append(loss.item())
+            # else:
+            #     loss, dice = criterion(preds, masks)
+            #     test_losses.append(loss.item())
+            #     test_dices.append(dice.item())
             loss, dice = criterion(preds, masks)
-
             test_losses.append(loss.item())
             test_dices.append(dice.item())
 
     print(
-        f"train loss: {(sum(test_losses)/len(test_losses)):3f}  ",
-        f"train acc: {(sum(test_dices)/len(test_dices)):.2f} %  "
+        f"val loss: {(sum(test_losses)/len(test_losses)):3f}  ",
+        # f"val acc: {(1 - (sum(test_losses)/len(test_losses))) * 100:.2f} %  ",
+        f"val acc: {(sum(test_dices)/len(test_dices)) * 100:.2f} %  ",
         f"image size: {inputs.size()}"
     )
 
-    return (sum(test_losses)/len(test_losses)), (sum(test_dices)/len(test_dices))
+    if isinstance(criterion, (_Loss, DiceLoss)):
+        return (sum(test_losses)/len(test_losses)), None
+    else:
+        return (sum(test_losses)/len(test_losses)), (sum(test_dices)/len(test_dices))
 
 
 if __name__ == '__main__':
@@ -159,7 +188,7 @@ if __name__ == '__main__':
             tags=tags,
         )
 
-    random_seed = 42
+    random_seed = 100000
 
     torch.manual_seed(random_seed)
     torch.cuda.manual_seed(random_seed)
@@ -201,7 +230,9 @@ if __name__ == '__main__':
 
     net = get_network(args).to(device)
     # loss_function = dice_loss
-    loss_function = DiceLoss().to(device)
+    # loss_function = DiceLoss().to(device)
+    # loss_function = nn.BCEWithLogitsLoss().to(device)
+    loss_function = DiceBCELoss().to(device)
     optimizer = optim.Adam(net.parameters(), lr=args.lr)
 
     if (args.mbs or args.mbs_bn):
@@ -233,6 +264,12 @@ if __name__ == '__main__':
                 # wandb.log( {'accuracy': acc}, step=epoch )
     else:
         for epoch in range(1, settings.EPOCH + 1):
+            val_loss, val_dice = eval_training(
+                device=device,
+                dataloader=carvana_test_loader,
+                model=net,
+                criterion=loss_function
+            )
             train_loss, train_dice = train(
                 epoch=epoch, total_epoch=settings.EPOCH,
                 device=device,
@@ -241,14 +278,10 @@ if __name__ == '__main__':
                 criterion=loss_function,
                 optimizer=optimizer
             )
-            val_loss, val_dice = eval_training(
-                device=device,
-                dataloader=carvana_test_loader,
-                model=net,
-                criterion=loss_function
-            )
             if args.wandb:
                 wandb.log( {'train loss': train_loss}, step=epoch )
-                wandb.log( {'train acc': train_dice}, step=epoch )
+                if train_dice is not None:
+                    wandb.log( {'train acc': train_dice}, step=epoch )
                 wandb.log( {'val loss': val_loss}, step=epoch  )
-                wandb.log( {'val acc': val_dice}, step=epoch )
+                if val_loss is not None:
+                    wandb.log( {'val acc': val_dice}, step=epoch )

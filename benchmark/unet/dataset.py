@@ -23,8 +23,8 @@ class CarvanaDataset(Dataset):
 
     def __getitem__(self, index):
         image_path = os.path.join(self.image_path, self.images[index])
-        mask_path = os.path.join(self.mask_path, self.images[index])
-        mask_path = mask_path.split(".")[0] + '_mask.gif'
+        mask_path = os.path.join( self.mask_path, self.images[index].replace(".jpg", "_mask.gif") )
+        # mask_path = mask_path.split(".")[0] + '_mask.gif'
 
         image = np.array( Image.open( image_path ).convert("RGB") )
         mask = np.array( Image.open( mask_path ).convert("L"), dtype=np.float32 )

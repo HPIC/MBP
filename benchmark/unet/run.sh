@@ -5,5 +5,5 @@ python train.py \
     -b 4 \
     -image_factor 0.5 \
     -warm 0 \
-    -lr 1e-4 
-    # -wandb
+    -lr 1e-2 \
+    -wandb
