@@ -1,6 +1,6 @@
 from datetime import datetime
 #total training epoches
-EPOCH = 150
+EPOCH = 50
 MILESTONES = [40, 80, 120]
 
 #mean and std of cifar100 dataset

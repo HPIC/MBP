@@ -3,7 +3,7 @@ python train.py \
     -gpu \
     -gpu_device 0 \
     -b 4 \
-    -image_factor 0.5 \
+    -image_factor 2 \
     -warm 0 \
     -lr 1e-2 \
     -wandb

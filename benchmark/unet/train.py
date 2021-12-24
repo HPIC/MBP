@@ -1,6 +1,7 @@
 import os
 import argparse
 import random
+from sys import path
 import time
 from typing import Optional, Union
 
@@ -19,9 +20,11 @@ import model
 import dataset
 from utils import (
     plotting,
+    save_parameters,
+    load_parameters,
+    show_segmentation,
     DiceLoss,
     DiceBCELoss,
-    dice_loss,
     get_network,
     get_dataset,
     WarmUpLR,
@@ -31,27 +34,24 @@ from utils import (
     best_acc_weights
 )
 ''' Micro-Batch Streaming '''
-from mbs import MicroBatchStreaming
+from mbs import MBSSegmentation
 
 ''' Monitoring Board '''
 import wandb
-
 from conf import settings
 
-
-train_losses = []
-init_loss = 0.0
 
 def train(
     epoch: int, total_epoch: int,
     device: torch.device,
     dataloader: DataLoader,
     model: nn.Module,
-    criterion: Union[DiceBCELoss, DiceLoss, _Loss],
+    criterion: Union[DiceBCELoss, DiceLoss],
     optimizer: Optimizer,
 ):
     loss: Tensor
     dice: Tensor
+    train_losses = []
     train_dices = []
     dataloader_len = len(dataloader)
 
@@ -64,42 +64,31 @@ def train(
 
         optimizer.zero_grad()
         preds: Tensor = model(inputs)
-        # if isinstance(criterion, (_Loss, DiceLoss)):
-        #     loss = criterion(preds, masks)
-        # else:
-        #     loss, dice = criterion(preds, masks)
         loss, dice = criterion(preds, masks)
         loss.backward()
         optimizer.step()
 
         train_losses.append( loss.item() )
         train_dices.append( dice.item() )
-        if idx == 0:
-            init_loss = loss.item()
-
         print(
             f"[{epoch}/{total_epoch}][{idx+1}/{dataloader_len}]  ",
-            f"init loss: {init_loss:.3f}  ",
-            f"cur loss: {(sum(train_losses)/len(train_losses)):.3f}  ",
-            f"decrease rate: {init_loss - (sum(train_losses)/len(train_losses)):.3f}",
-            f"train acc: {(sum(train_dices)/len(train_dices)) * 100:.2f} %  ",
+            f"train loss: {(sum(train_losses)/len(train_losses)):.3f}  ",
+            f"train acc: {(sum(train_dices)/len(train_dices)) * 100:.2f}  ",
+            f"image size: ({inputs.size(2)}, {inputs.size(3)})",
             end='\r'
         )
     finish = time.time()
     print('\nepoch {} training time consumed: {:.2f}s'.format(epoch, finish - start))
-    plotting( train_losses )
-
-    if isinstance(criterion, (_Loss, DiceLoss)):
-        return (sum(train_losses)/len(train_losses)), None
-    else:
-        return (sum(train_losses)/len(train_losses)), (sum(train_dices)/len(train_dices))
+    return (sum(train_losses)/len(train_losses)), (sum(train_dices)/len(train_dices))
 
 
 def eval_training(
+    epoch: int,
     device: torch.device,
     dataloader: DataLoader,
     model: nn.Module,
-    criterion: Union[dice_loss, DiceLoss] = DiceLoss(),
+    criterion: Union[DiceBCELoss, DiceLoss],
+    path: str
 ):
     loss: Tensor
     dice: Tensor
@@ -113,28 +102,19 @@ def eval_training(
             masks: Tensor = masks.to(device)
 
             preds: Tensor = model(inputs)
-            # if isinstance( criterion, (DiceLoss, _Loss) ):
-            #     loss = criterion(preds, masks)
-            #     test_losses.append(loss.item())
-            # else:
-            #     loss, dice = criterion(preds, masks)
-            #     test_losses.append(loss.item())
-            #     test_dices.append(dice.item())
             loss, dice = criterion(preds, masks)
             test_losses.append(loss.item())
             test_dices.append(dice.item())
 
+        path += f'epoch_{epoch}_'
+        show_segmentation( inputs, preds, masks, path=path )
+
     print(
         f"val loss: {(sum(test_losses)/len(test_losses)):3f}  ",
-        # f"val acc: {(1 - (sum(test_losses)/len(test_losses))) * 100:.2f} %  ",
         f"val acc: {(sum(test_dices)/len(test_dices)) * 100:.2f} %  ",
-        f"image size: {inputs.size()}"
+        f"image size: ({inputs.size(2)}, {inputs.size(3)})",
     )
-
-    if isinstance(criterion, (_Loss, DiceLoss)):
-        return (sum(test_losses)/len(test_losses)), None
-    else:
-        return (sum(test_losses)/len(test_losses)), (sum(test_dices)/len(test_dices))
+    return (sum(test_losses)/len(test_losses)), (sum(test_dices)/len(test_dices))
 
 
 if __name__ == '__main__':
@@ -149,7 +129,7 @@ if __name__ == '__main__':
     parser.add_argument('-warm', type=int, default=0, help='warm up training phase')
     parser.add_argument('-lr', type=float, default=0.1, help='initial learning rate')
     parser.add_argument('-resume', action='store_true', default=False, help='resume training')
-    parser.add_argument('-image_factor', type=float, default=1.0, help='the factor for resizing image size')
+    parser.add_argument('-image_factor', type=int, default=1, help='the factor for resizing image size')
     parser.add_argument('-val_factor', type=float, default=0.1, help='Setup the factor for validation')
 
     ''' Micro-Batch Streaming Arguments '''
@@ -162,23 +142,37 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     _device = 'cuda:' + str(args.gpu_device)
+    para_path = 'checkpoint/'
+    res_path = 'result/'
+
+    image_factor = 1 / args.image_factor
+    image_f = f"1_{args.image_factor}"
+    name = None
+
+    if args.mbs:
+        name = f'{args.net}(w/ MBS)'
+        para_path += f'{args.net}/mbs_with_{image_f}.pth'
+        res_path += f'{args.net}/mbs/scale_{image_f}_'
+    elif args.mbs_bn:
+        name = f'{args.net}(w/ MBS-BN)'
+        para_path += f'{args.net}/bn_with_{image_f}.pth'
+        res_path += f'{args.net}/bn/scale_{image_f}_'
+    else:
+        name = f'{args.net}(w/ baseline)'
+        para_path += f'{args.net}/baseline_with_{image_f}.pth'
+        res_path += f'{args.net}/baseline/scale_{image_f}_'
 
     ''' Setup WandB '''
     if args.wandb:
-        name = None
         tags = []
 
         if args.mbs:
-            name = f'{args.net}(w/ MBS)'
             tags.append( f'usize {args.usize}' )
         elif args.mbs_bn:
-            name = f'{args.net}(w/ MBS-BN)'
             tags.append( f'usize {args.usize}' )
-        else:
-            name = f'{args.net}(w/ baseline)'
 
         tags.append( f'batch {args.b}' )
-        tags.append( f'image {args.image_factor}' )
+        tags.append( f'image {image_f}' )
         tags.append( f'carvana')
 
         wandb.init(
@@ -202,7 +196,7 @@ if __name__ == '__main__':
     carvana_dataset = get_dataset(
         settings.CARVANA_MEAN,
         settings.CARVANA_STD,
-        scale=args.image_factor
+        scale=image_factor
     )
     n_val = int( len(carvana_dataset) * args.val_factor )
     n_train = len(carvana_dataset) - n_val
@@ -229,14 +223,11 @@ if __name__ == '__main__':
     )
 
     net = get_network(args).to(device)
-    # loss_function = dice_loss
-    # loss_function = DiceLoss().to(device)
-    # loss_function = nn.BCEWithLogitsLoss().to(device)
     loss_function = DiceBCELoss().to(device)
     optimizer = optim.Adam(net.parameters(), lr=args.lr)
 
     if (args.mbs or args.mbs_bn):
-        mbs_trainer, net = MicroBatchStreaming(
+        mbs_trainer, net = MBSSegmentation(
             dataloader=carvana_training_loader,
             model=net,
             criterion=loss_function,
@@ -254,22 +245,21 @@ if __name__ == '__main__':
         for epoch in range(1, settings.EPOCH + 1):
             mbs_trainer.train()
             val_loss, val_dice = eval_training(
+                epoch=epoch,
                 device=device,
                 dataloader=carvana_test_loader,
                 model=net,
-                criterion=loss_function
+                criterion=loss_function,
+                path=res_path
             )
             if args.wandb:
                 wandb.log( {'train loss': mbs_trainer.get_loss()}, step=epoch )
-                # wandb.log( {'accuracy': acc}, step=epoch )
+                wandb.log( {'train dice': mbs_trainer.get_dice()}, step=epoch )
+                wandb.log( {'val loss': val_loss}, step=epoch  )
+                wandb.log( {'val acc': val_dice}, step=epoch )
+            save_parameters( net, path=para_path )
     else:
         for epoch in range(1, settings.EPOCH + 1):
-            val_loss, val_dice = eval_training(
-                device=device,
-                dataloader=carvana_test_loader,
-                model=net,
-                criterion=loss_function
-            )
             train_loss, train_dice = train(
                 epoch=epoch, total_epoch=settings.EPOCH,
                 device=device,
@@ -278,10 +268,18 @@ if __name__ == '__main__':
                 criterion=loss_function,
                 optimizer=optimizer
             )
+            val_loss, val_dice = eval_training(
+                epoch=epoch,
+                device=device,
+                dataloader=carvana_test_loader,
+                model=net,
+                criterion=loss_function,
+                path=res_path
+            )
             if args.wandb:
                 wandb.log( {'train loss': train_loss}, step=epoch )
-                if train_dice is not None:
-                    wandb.log( {'train acc': train_dice}, step=epoch )
+                wandb.log( {'train dice': train_dice}, step=epoch )
                 wandb.log( {'val loss': val_loss}, step=epoch  )
-                if val_loss is not None:
-                    wandb.log( {'val acc': val_dice}, step=epoch )
+                wandb.log( {'val acc': val_dice}, step=epoch )
+            save_parameters( net, path=para_path )
+

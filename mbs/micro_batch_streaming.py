@@ -65,12 +65,11 @@ class MicroBatchStreaming(_MBSBlock):
         return self, self.module
 
     def train(self):
+        data0: torch.Tensor
+        data1: torch.Tensor
         self.epoch_loss = 0
         self.module.train()
         for idx, (data0, data1) in enumerate( self.dataloader ):
-            data0: torch.Tensor
-            data1: torch.Tensor
-
             mini_loss = 0
             # size = self.micro_batch
             chunks = self.chunks
@@ -122,6 +121,80 @@ class MicroBatchStreaming(_MBSBlock):
     def get_loss(self):
         return self.epoch_loss / self.dataloader.__len__()
 
+
+class MBSSegmentation(MicroBatchStreaming):
+    def __init__(
+        self, 
+        dataloader: DataLoader, 
+        model: Module, 
+        criterion: Module, 
+        optimizer: Optimizer, 
+        lr_scheduler: _LRScheduler = None, 
+        warmup_factor: Optional[int] = None, 
+        device_index: Optional[int] = None, 
+        batch_size: int = 1, 
+        micro_batch_size: int = 1, 
+        bn_factor: bool = False
+    ) -> None:
+        super().__init__(
+            dataloader, 
+            model, 
+            criterion, 
+            optimizer, 
+            lr_scheduler=lr_scheduler, 
+            warmup_factor=warmup_factor, 
+            device_index=device_index, 
+            batch_size=batch_size, 
+            micro_batch_size=micro_batch_size, 
+            bn_factor=bn_factor
+        )
+
+    def train(self):
+        data0: torch.Tensor
+        data1: torch.Tensor
+
+        pred: torch.Tensor
+        loss: torch.Tensor
+        dice: torch.Tensor
+
+        self.epoch_loss = 0
+        self.epoch_dice = []
+        self.module.train()
+        for idx, (data0, data1) in enumerate( self.dataloader ):
+            mini_loss = 0
+            mini_dice = []
+            chunks = self.chunks
+            if data0.size(0) != self.batch_size:
+                chunks = math.ceil( data0.size(0) / self.micro_batch )
+
+            chunk_data0 = data0.chunk( chunks )
+            chunk_data1 = data1.chunk( chunks )
+
+            self.optimizer.zero_grad()
+
+            for jdx, (i, l) in enumerate( zip(chunk_data0, chunk_data1) ):
+                self._bn = (jdx + 1) == chunks
+
+                input = i.to(self.device)
+                mask = l.to(self.device)
+
+                pred = self.module( input )
+                loss, dice = self.criterion( pred, mask ) / chunks
+                mini_loss += loss.detach().item()
+                mini_dice.append( dice.detach().item() )
+                loss.backward()
+
+            self.optimizer.step()
+            self.epoch_loss += mini_loss
+            self.epoch_dice.append( sum(mini_dice)/len(mini_dice) )
+
+            self._init = self._init and False
+
+            if idx <= self.warmup_factor and self.scheduler != None:
+                self.scheduler.step()
+
+    def get_dice(self):
+        return sum(self.epoch_dice) / len(self.epoch_dice)
 
 # def micro_batch_streaming(
 #     dataloader: DataLoader,

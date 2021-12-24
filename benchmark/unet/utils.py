@@ -33,30 +33,11 @@ def plotting(current: List[float]):
     plx.show()
 
 
-def dice_loss(pred: Tensor, mask: Tensor, smooth: int = 1e-5):
-    bce_output = F.binary_cross_entropy_with_logits(
-        pred, mask, reduction="sum"
-    )
-    pred = torch.sigmoid(pred)
-    intersection = (pred * mask).sum(dim=(2,3))
-    union = pred.sum(dim=(2,3)) + mask.sum(dim=(2,3))
-    
-    # dice coefficient
-    dice = 2.0 * (intersection + smooth) / (union + smooth)
-    
-    # dice loss
-    dice_loss = 1.0 - dice
-    
-    # total loss
-    loss: Tensor = bce_output + dice_loss
-    return loss.sum(), dice.sum() * 100
-
-
 class DiceLoss(Module):
     def __init__(self, weight=None, size_average=True) -> None:
         super().__init__()
     
-    def forward(self, inputs: Tensor, masks: Tensor, smooth=1):
+    def forward( self, inputs: Tensor, masks: Tensor, smooth: float = 1.0 ):
         # inputs = torch.sigmoid( inputs )
         # inputs = inputs.view(-1)
         # masks = masks.view(-1)
@@ -67,18 +48,15 @@ class DiceLoss(Module):
         intersection: Tensor = ( inputs * masks ).sum( dim=(2,3) )
         union: Tensor = inputs.sum( dim=(2,3) ) + masks.sum( dim=(2,3) )
         dice: Tensor = ( 2 * intersection + smooth ) / ( union + smooth )
-
         loss: Tensor = 1 - dice
-        # bce: Tensor = F.binary_cross_entropy_with_logits(inputs, masks, reduction="mean")
-        # loss += bce
 
-        return loss.sum()
+        return loss.sum(), dice.mean()
 
 class DiceBCELoss(Module):
     def __init__(self, weight=None, size_average=True) -> None:
         super().__init__()
     
-    def forward(self, inputs: Tensor, masks: Tensor, smooth=1):
+    def forward( self, inputs: Tensor, masks: Tensor, smooth: float = 1.0 ):
         # inputs = torch.sigmoid( inputs )
         # inputs = inputs.view(-1)
         # masks = masks.view(-1)
@@ -95,8 +73,9 @@ class DiceBCELoss(Module):
         loss: Tensor = 1 - dice
         bce: Tensor = F.binary_cross_entropy_with_logits(inputs, masks, reduction="mean")
         loss += bce
-    
-        return loss.sum(), dice.sum()
+
+        return loss.sum(), dice.mean()
+
 
 def get_network_name(name: str):
     if name == 'unet1156':
@@ -128,6 +107,32 @@ def get_dataset(
             image_transform=image_transform, 
             mask_transform=mask_transform
         )
+
+
+def save_parameters(
+    model: Module, path: str = 'checkpoint/unet3156/test.pth'
+):
+    torch.save( model.state_dict(), path )
+
+
+def load_parameters(
+    model: Module, path: str = 'checkpoint/unet3156/test.pth'
+):
+    model.load_state_dict(torch.load(path))
+    return model
+
+
+def show_segmentation(
+    origin: Tensor, pred: Tensor, mask: Tensor, path: str = 'result/unet3156/'
+):
+    import torchvision.utils as vutils
+
+    origin_path = path + 'origin.png'
+    pred_path = path + "pred.png"
+    mask_path = path + "mask.png"
+    vutils.save_image( origin.detach(), origin_path, normalize=True )
+    vutils.save_image( pred.detach(), pred_path, normalize=True )
+    vutils.save_image( mask.detach(), mask_path, normalize=True )
 
 
 '''
