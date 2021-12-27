@@ -179,7 +179,9 @@ class MBSSegmentation(MicroBatchStreaming):
                 mask = l.to(self.device)
 
                 pred = self.module( input )
-                loss, dice = self.criterion( pred, mask ) / chunks
+                loss, dice = self.criterion( pred, mask )
+                # loss /= chunks
+                # dice /= chunks
                 mini_loss += loss.detach().item()
                 mini_dice.append( dice.detach().item() )
                 loss.backward()
@@ -190,8 +192,9 @@ class MBSSegmentation(MicroBatchStreaming):
 
             self._init = self._init and False
 
-            if idx <= self.warmup_factor and self.scheduler != None:
-                self.scheduler.step()
+            if self.warmup_factor is not None and self.scheduler is not None:
+                if idx <= self.warmup_factor:
+                    self.scheduler.step()
 
     def get_dice(self):
         return sum(self.epoch_dice) / len(self.epoch_dice)
