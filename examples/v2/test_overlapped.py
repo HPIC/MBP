@@ -86,39 +86,46 @@ if __name__=="__main__":
     )
 
     ''' Train '''
-    if args.mbs:
-        trainer, net = MicroBatchStreaming(
-            dataloader=train_dataloader,
-            model=net,
-            criterion=criterion,
-            optimizer=optimizer,
-            batch_size=256,
-            micro_batch_size=64,
-            device_index=0
-        ).get_trainer()
-        start = perf_counter()
-        trainer.train()
-        end = perf_counter()
-    else:
-        input: Tensor
-        label: Tensor
-        output: Tensor
-        loss: Tensor
+    # if args.mbs:
+    #     trainer, net = MicroBatchStreaming(
+    #         dataloader=train_dataloader,
+    #         model=net,
+    #         criterion=criterion,
+    #         optimizer=optimizer,
+    #         batch_size=256,
+    #         micro_batch_size=64,
+    #         device_index=0
+    #     ).get_trainer()
+    #     start = perf_counter()
+    #     trainer.train()
+    #     end = perf_counter()
+    # else:
+    #     input: Tensor
+    #     label: Tensor
+    #     output: Tensor
+    #     loss: Tensor
         
-        start = perf_counter()
-        for didx, (input, label) in enumerate(train_dataloader):
-            input = input.to(gpu)
-            label = label.to(gpu)
+    #     start = perf_counter()
+    #     for didx, (input, label) in enumerate(train_dataloader):
+    #         input = input.to(gpu)
+    #         label = label.to(gpu)
 
-            output = net( input )
-            loss = criterion( output, label )
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        end = perf_counter()
+    #         output = net( input )
+    #         loss = criterion( output, label )
+    #         optimizer.zero_grad()
+    #         loss.backward()
+    #         optimizer.step()
+    #     end = perf_counter()
 
-    for name, para in net.named_parameters():
-        print(name, para.data)
+    # for name, para in net.named_parameters():
+    #     print(name, para.data)
 
-    print(f"train time: {end - start:.2f}")
+    # print(f"train time: {end - start:.2f}")
 
+    input: Tensor
+    label: Tensor
+
+    for input, label in train_dataloader:
+        input.to(gpu)
+        print(input.data_ptr())
+        break

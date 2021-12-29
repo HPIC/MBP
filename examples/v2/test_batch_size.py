@@ -16,6 +16,8 @@ def config_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument( '--mbs', action='store_true', default=False )
     parser.add_argument( '-s', '--seed', type=int, default=1000)
+    parser.add_argument( '-b', '--batch', type=int, default=256)
+    parser.add_argument( '-i', '--image', type=int, default=32)
     return parser.parse_args()
 
 
@@ -78,47 +80,56 @@ if __name__=="__main__":
     criterion = nn.CrossEntropyLoss().to(gpu)
     optimizer = optim.Adam( net.parameters(), lr=0.01 )
 
-    train_dataset = cifar_dataset(is_train=True)
+    train_dataset = cifar_dataset(image_size=args.image, is_train=True)
     train_dataloader = DataLoader(
-        train_dataset, batch_size=256,
+        train_dataset, batch_size=args.batch,
         num_workers=6, pin_memory=True,
         shuffle=True
     )
 
-    ''' Train '''
-    if args.mbs:
-        trainer, net = MicroBatchStreaming(
-            dataloader=train_dataloader,
-            model=net,
-            criterion=criterion,
-            optimizer=optimizer,
-            batch_size=256,
-            micro_batch_size=64,
-            device_index=0
-        ).get_trainer()
-        start = perf_counter()
-        trainer.train()
-        end = perf_counter()
-    else:
-        input: Tensor
-        label: Tensor
-        output: Tensor
-        loss: Tensor
+    input: Tensor
+    label: Tensor
+    output: Tensor
+    loss: Tensor
+
+    train_times = []
+    data_load_times = []
+    data_send_times = []
+    iterations = 0
+    
+    # start = perf_counter()
+    data_load_start = perf_counter()
+    for didx, (input, label) in enumerate(train_dataloader):
+        data_load_end = perf_counter()
+        data_load_times.append( data_load_end - data_load_start )
+        # data_start = perf_counter()
+
+        input = input.to(gpu)
+        label = label.to(gpu)
+
+        # data_end = perf_counter()
+        # data_send_times.append( data_end - data_start )
+
+        # train_start = perf_counter()
+
+        output = net( input )
+        loss = criterion( output, label )
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        # train_end = perf_counter()
+        # train_times.append( train_end - train_start )
         
-        start = perf_counter()
-        for didx, (input, label) in enumerate(train_dataloader):
-            input = input.to(gpu)
-            label = label.to(gpu)
+        # iterations = didx + 1
 
-            output = net( input )
-            loss = criterion( output, label )
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        end = perf_counter()
+        data_load_start = perf_counter()
+    # end = perf_counter()
 
-    for name, para in net.named_parameters():
-        print(name, para.data)
+    # print(f"train time: {end - start:.2f}")
+    # print(f"model training time: {sum(train_times)/len(train_times)}")
+    # print(f"num of iterations: {iterations}")
 
-    print(f"train time: {end - start:.2f}")
+    # print(f"data sending time: {sum(data_send_times)/len(data_send_times)}")
+    print(f"data loading time: {sum(data_load_times)/len(data_load_times)}")
 

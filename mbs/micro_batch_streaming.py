@@ -97,7 +97,11 @@ class MicroBatchStreaming(_MBSBlock):
 
                 output: torch.Tensor = self.module( input )
                 micro_loss = self.criterion( output, label ) / chunks
-                mini_loss.append( micro_loss.item() )
+
+                if (jdx + 1) == chunks:
+                    mini_loss.append( micro_loss )
+                else:
+                    mini_loss.append( micro_loss.item() )
 
             self.optimizer.zero_grad()
             loss = sum( mini_loss )
@@ -107,8 +111,9 @@ class MicroBatchStreaming(_MBSBlock):
 
             self._init = self._init and False
 
-            if idx <= self.warmup_factor and self.scheduler != None:
-                self.scheduler.step()
+            if self.warmup_factor is not None and self.scheduler is not None:
+                if idx <= self.warmup_factor:
+                    self.scheduler.step()
 
     def get_loss(self):
         return self.epoch_loss / self.dataloader.__len__()
