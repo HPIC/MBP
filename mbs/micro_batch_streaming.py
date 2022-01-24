@@ -5,6 +5,7 @@ from torch.nn import Module
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader
+from torch.profiler import profile, ProfilerActivity
 
 from torch.cuda import (
     Stream,
@@ -115,8 +116,9 @@ class MicroBatchStreaming(_MBSBlock):
 
             self._init = self._init and False
 
-            if idx <= self.warmup_factor and self.scheduler != None:
-                self.scheduler.step()
+            if self.warmup_factor is not None and self.scheduler is not None:
+                if idx <= self.warmup_factor:
+                    self.scheduler.step()
 
     def get_loss(self):
         return self.epoch_loss / self.dataloader.__len__()
@@ -198,6 +200,59 @@ class MBSSegmentation(MicroBatchStreaming):
 
     def get_dice(self):
         return sum(self.epoch_dice) / len(self.epoch_dice)
+
+    def train_profile(self):
+        data0: torch.Tensor
+        data1: torch.Tensor
+
+        pred: torch.Tensor
+        loss: torch.Tensor
+        dice: torch.Tensor
+
+        self.epoch_loss = 0
+        self.epoch_dice = []
+        self.module.train()
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+            for idx, (data0, data1) in enumerate( self.dataloader ):
+                mini_loss = 0
+                mini_dice = []
+                chunks = self.chunks
+                if data0.size(0) != self.batch_size:
+                    chunks = math.ceil( data0.size(0) / self.micro_batch )
+
+                chunk_data0 = data0.chunk( chunks )
+                chunk_data1 = data1.chunk( chunks )
+
+                self.optimizer.zero_grad()
+
+                for jdx, (i, l) in enumerate( zip(chunk_data0, chunk_data1) ):
+                    self._bn = (jdx + 1) == chunks
+
+                    input = i.to(self.device)
+                    mask = l.to(self.device)
+
+                    pred = self.module( input )
+                    loss, dice = self.criterion( pred, mask )
+                    # loss /= chunks
+                    # dice /= chunks
+                    mini_loss += loss.detach().item()
+                    mini_dice.append( dice.detach().item() )
+                    loss.backward()
+
+                self.optimizer.step()
+                self.epoch_loss += mini_loss
+                self.epoch_dice.append( sum(mini_dice)/len(mini_dice) )
+
+                self._init = self._init and False
+
+                if self.warmup_factor is not None and self.scheduler is not None:
+                    if idx <= self.warmup_factor:
+                        self.scheduler.step()
+
+                if idx > 1:
+                    break
+        prof: profile
+        prof.export_chrome_trace("./profiling_mbs.json")
 
 # def micro_batch_streaming(
 #     dataloader: DataLoader,
