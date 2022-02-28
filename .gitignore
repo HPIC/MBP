@@ -683,6 +683,8 @@ benchmark/*/parameters/*
 benchmark/*/wandb/*
 benchmark/*/result/*
 
+**/*.json
+
 ## benchmark partial result
 benchmark/loss/
 benchmark/parameters/
