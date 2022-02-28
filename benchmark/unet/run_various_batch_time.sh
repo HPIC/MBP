@@ -1,0 +1,100 @@
+# python train.py \
+#     -net unet3156 \
+#     -gpu \
+#     -gpu_device 0 \
+#     -b 32 \
+#     -image_factor 2 \
+#     -warm 0 \
+#     -lr 1e-2 \
+#     -mbs \
+#     -usize 2 \
+#     -wandb
+
+# python train.py \
+#     -net unet3156 \
+#     -gpu \
+#     -gpu_device 0 \
+#     -b 64 \
+#     -image_factor 4 \
+#     -warm 0 \
+#     -lr 1e-2 \
+#     -mbs \
+#     -usize 16 \
+#     -wandb
+
+python train.py \
+    -net unet3156 \
+    -gpu \
+    -gpu_device 0 \
+    -b 4 \
+    -image_factor 2 \
+    -warm 0 \
+    -lr 1e-2 \
+    -wandb \
+    -mbs \
+    -usize 2
+
+# python train.py \
+#     -net unet3156 \
+#     -gpu \
+#     -gpu_device 0 \
+#     -b 512 \
+#     -image_factor 16 \
+#     -warm 0 \
+#     -lr 1e-2 \
+#     -mbs \
+#     -usize 2 \
+#     -wandb
+
+
+
+
+
+
+# python train.py \
+#     -net unet3156 \
+#     -gpu \
+#     -gpu_device 0 \
+#     -b 32 \
+#     -image_factor 2 \
+#     -warm 0 \
+#     -lr 1e-2 \
+#     -mbs_bn \
+#     -usize 2 \
+#     -wandb
+
+# python train.py \
+#     -net unet3156 \
+#     -gpu \
+#     -gpu_device 0 \
+#     -b 64 \
+#     -image_factor 4 \
+#     -warm 0 \
+#     -lr 1e-2 \
+#     -mbs_bn \
+#     -usize 16 \
+#     -wandb
+
+# python train.py \
+#     -net unet3156 \
+#     -gpu \
+#     -gpu_device 0 \
+#     -b 128 \
+#     -image_factor 8 \
+#     -warm 0 \
+#     -lr 1e-2 \
+#     -mbs_bn \
+#     -usize 64 \
+#     -wandb
+
+# python train.py \
+#     -net unet3156 \
+#     -gpu \
+#     -gpu_device 0 \
+#     -b 512 \
+#     -image_factor 16 \
+#     -warm 0 \
+#     -lr 1e-2 \
+#     -mbs_bn \
+#     -usize 256 \
+#     -wandb

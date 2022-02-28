@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import _LRScheduler
 
 import numpy
 import os
-import dataset
+import dataset_unet as dataset
 import datetime
 import re
 import math
@@ -87,7 +87,7 @@ def get_network_name(name: str):
         return unet_3156()
 
 
-def get_dataset(
+def get_dataset_unet(
     mean: List[float], std: List[float], 
     scale: float = 1.0
 ):
@@ -103,7 +103,7 @@ def get_dataset(
     ])
 
     return dataset.CarvanaDataset(
-            root='data',
+            root='carvana',
             image_transform=image_transform, 
             mask_transform=mask_transform
         )
@@ -167,7 +167,7 @@ def get_training_dataloader(
         transforms.Resize( ( int(1280 * scale), int(1918 * scale) ) )
     ])
 
-    carvana_training = dataset.CarvanaTrain(root='./data', train=True, image_transform=image_transform, mask_transform=mask_transform)
+    carvana_training = dataset.CarvanaTrain(root='./carvana', train=True, image_transform=image_transform, mask_transform=mask_transform)
     carvana_training_loader = DataLoader(carvana_training, shuffle=shuffle, num_workers=num_workers, batch_size=batch_size, pin_memory=pin_memory)
 
     return carvana_training_loader
@@ -185,7 +185,7 @@ def get_test_dataloader(
         transforms.Resize( ( int(1280 * scale), int(1918 * scale) ) )
     ])
 
-    carvana_testing = dataset.CarvanaTest(root='./data', train=False, image_transform=image_transform)
+    carvana_testing = dataset.CarvanaTest(root='./carvana', train=False, image_transform=image_transform)
     carvana_testing_loader = DataLoader(carvana_testing, shuffle=shuffle, num_workers=num_workers, batch_size=batch_size, pin_memory=pin_memory)
 
     return carvana_testing_loader

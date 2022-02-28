@@ -14,6 +14,8 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import random_split
 
+from torch.profiler import profile, ProfilerActivity
+
 import plotext as plx
 
 import model
@@ -41,6 +43,53 @@ import wandb
 from conf import settings
 
 
+def train_profile(
+    epoch: int, total_epoch: int,
+    device: torch.device,
+    dataloader: DataLoader,
+    model: nn.Module,
+    criterion: Union[DiceBCELoss, DiceLoss],
+    optimizer: Optimizer,
+):
+    loss: Tensor
+    dice: Tensor
+    train_losses = []
+    train_dices = []
+    dataloader_len = len(dataloader)
+
+    start = time.perf_counter()
+    model.train()
+
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+        for idx, (inputs, masks) in enumerate(dataloader):
+            inputs: Tensor = inputs.to(device)
+            masks: Tensor = masks.to(device)
+
+            optimizer.zero_grad()
+            preds: Tensor = model(inputs)
+            loss, dice = criterion(preds, masks)
+            train_losses.append( loss.item() )
+            train_dices.append( dice.item() )
+            loss.backward()
+            optimizer.step()
+
+            # train_losses.append( loss.item() )
+            # train_dices.append( dice.item() )
+            # print(
+            #     f"[{epoch}/{total_epoch}][{idx+1}/{dataloader_len}]  ",
+            #     f"train loss: {(sum(train_losses)/len(train_losses)):.3f}  ",
+            #     f"train acc: {(sum(train_dices)/len(train_dices)) * 100:.2f}  ",
+            #     f"image size: ({inputs.size(2)}, {inputs.size(3)})",
+            #     end='\r'
+            # )
+            if idx > 1:
+                break
+    finish = time.perf_counter()
+    prof: profile
+    prof.export_chrome_trace("./profiling_origin.json")
+    print('\nepoch {} training time consumed: {:.2f}s'.format(epoch, finish - start))
+    return (sum(train_losses)/len(train_losses)), (sum(train_dices)/len(train_dices)), (finish - start)
+
 def train(
     epoch: int, total_epoch: int,
     device: torch.device,
@@ -55,7 +104,7 @@ def train(
     train_dices = []
     dataloader_len = len(dataloader)
 
-    start = time.time()
+    start = time.perf_counter()
     model.train()
 
     for idx, (inputs, masks) in enumerate(dataloader):
@@ -65,11 +114,13 @@ def train(
         optimizer.zero_grad()
         preds: Tensor = model(inputs)
         loss, dice = criterion(preds, masks)
-        loss.backward()
-        optimizer.step()
 
         train_losses.append( loss.item() )
         train_dices.append( dice.item() )
+
+        loss.backward()
+        optimizer.step()
+
         print(
             f"[{epoch}/{total_epoch}][{idx+1}/{dataloader_len}]  ",
             f"train loss: {(sum(train_losses)/len(train_losses)):.3f}  ",
@@ -77,9 +128,9 @@ def train(
             f"image size: ({inputs.size(2)}, {inputs.size(3)})",
             end='\r'
         )
-    finish = time.time()
+    finish = time.perf_counter()
     print('\nepoch {} training time consumed: {:.2f}s'.format(epoch, finish - start))
-    return (sum(train_losses)/len(train_losses)), (sum(train_dices)/len(train_dices))
+    return (sum(train_losses)/len(train_losses)), (sum(train_dices)/len(train_dices)), (finish - start)
 
 
 def eval_training(
@@ -106,6 +157,8 @@ def eval_training(
             test_losses.append(loss.item())
             test_dices.append(dice.item())
 
+            # print(dice)
+
         path += f'epoch_{epoch}_'
         show_segmentation( inputs, preds, masks, path=path )
 
@@ -115,6 +168,13 @@ def eval_training(
         f"image size: ({inputs.size(2)}, {inputs.size(3)})",
     )
     return (sum(test_losses)/len(test_losses)), (sum(test_dices)/len(test_dices))
+
+
+def para_check(
+    model: nn.Module
+):
+
+    pass
 
 
 if __name__ == '__main__':
@@ -139,6 +199,7 @@ if __name__ == '__main__':
 
     ''' WandB Arguments '''
     parser.add_argument('-wandb', action='store_true', default=False, help='Using Wandb for monitoring')
+    parser.add_argument('-para', action='store_true', default=False, help='training model with MBS')
 
     args = parser.parse_args()
     _device = 'cuda:' + str(args.gpu_device)
@@ -243,24 +304,29 @@ if __name__ == '__main__':
     ''' Training model '''
     if (args.mbs or args.mbs_bn):
         for epoch in range(1, settings.EPOCH + 1):
-            mbs_trainer.train()
-            val_loss, val_dice = eval_training(
-                epoch=epoch,
-                device=device,
-                dataloader=carvana_test_loader,
-                model=net,
-                criterion=loss_function,
-                path=res_path
-            )
-            if args.wandb:
-                wandb.log( {'train loss': mbs_trainer.get_loss()}, step=epoch )
-                wandb.log( {'train dice': mbs_trainer.get_dice()}, step=epoch )
-                wandb.log( {'val loss': val_loss}, step=epoch  )
-                wandb.log( {'val acc': val_dice}, step=epoch )
-            save_parameters( net, path=para_path )
+            print(epoch, "/", settings.EPOCH)
+            start = time.perf_counter()
+            mbs_trainer.train_profile()
+            finish = time.perf_counter()
+            print('epoch time', finish - start, ' s')
+            # val_loss, val_dice = eval_training(
+            #     epoch=epoch,
+            #     device=device,
+            #     dataloader=carvana_test_loader,
+            #     model=net,
+            #     criterion=loss_function,
+            #     path=res_path
+            # )
+            # if args.wandb:
+            #     wandb.log( {'train time': finish - start}, step=epoch)
+            #     wandb.log( {'train loss': mbs_trainer.get_loss()}, step=epoch )
+            #     wandb.log( {'train dice': mbs_trainer.get_dice()}, step=epoch )
+            #     wandb.log( {'val loss': val_loss}, step=epoch  )
+            #     wandb.log( {'val acc': val_dice}, step=epoch )
+            # save_parameters( net, path=para_path )
     else:
         for epoch in range(1, settings.EPOCH + 1):
-            train_loss, train_dice = train(
+            train_loss, train_dice, train_time = train_profile(
                 epoch=epoch, total_epoch=settings.EPOCH,
                 device=device,
                 dataloader=carvana_training_loader,
@@ -268,18 +334,19 @@ if __name__ == '__main__':
                 criterion=loss_function,
                 optimizer=optimizer
             )
-            val_loss, val_dice = eval_training(
-                epoch=epoch,
-                device=device,
-                dataloader=carvana_test_loader,
-                model=net,
-                criterion=loss_function,
-                path=res_path
-            )
-            if args.wandb:
-                wandb.log( {'train loss': train_loss}, step=epoch )
-                wandb.log( {'train dice': train_dice}, step=epoch )
-                wandb.log( {'val loss': val_loss}, step=epoch  )
-                wandb.log( {'val acc': val_dice}, step=epoch )
-            save_parameters( net, path=para_path )
+            # val_loss, val_dice = eval_training(
+            #     epoch=epoch,
+            #     device=device,
+            #     dataloader=carvana_test_loader,
+            #     model=net,
+            #     criterion=loss_function,
+            #     path=res_path
+            # )
+            # if args.wandb:
+            #     wandb.log( {'train time': train_time}, step=epoch)
+            #     wandb.log( {'train loss': train_loss}, step=epoch )
+            #     wandb.log( {'train dice': train_dice}, step=epoch )
+            #     wandb.log( {'val loss': val_loss}, step=epoch  )
+            #     wandb.log( {'val acc': val_dice}, step=epoch )
+            # save_parameters( net, path=para_path )
 

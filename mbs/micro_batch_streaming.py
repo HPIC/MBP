@@ -19,9 +19,20 @@ from .wrap_model import MBSBatchNorm
 class _MBSBlock:
     def __init__(
         self,
+        debug: Optional[str] = None
     ) -> None:
         self._init = True
         self._bn = False
+
+        self.debug_msg = debug
+
+    def _debug(self):
+        if self.debug_msg == 'early stop':
+            for name, para in self.module.named_parameters():
+                print(name, '*'*30)
+                print(para.data)
+            print("\n\n\n")
+            raise Exception(f"[MBS Debug] early stop")
 
 class MicroBatchStreaming(_MBSBlock):
     def __init__(
@@ -36,14 +47,17 @@ class MicroBatchStreaming(_MBSBlock):
         batch_size: int = 1,
         micro_batch_size: int = 1,
         bn_factor: bool = False,
+        debug: Optional[str] = None
     ) -> None:
-        super().__init__()
+        super().__init__(debug=debug)
         self.device = torch.device(f'cuda:{device_index}')
 
         self.dataloader = dataloader
         if bn_factor:
+            print("[MBS] Consider BatchNorm layers")
             self.module = MBSBatchNorm.wrap_batch_norm(model, self).to(self.device)
         else:
+            print("[MBS] Does not consider BatchNorm layers")
             self.module = model
         self.criterion = criterion
         self.optimizer = optimizer
@@ -51,6 +65,10 @@ class MicroBatchStreaming(_MBSBlock):
         ''' Warmup arguments '''
         self.scheduler = lr_scheduler
         self.warmup_factor = warmup_factor
+        if self.scheduler is None or self.warmup_factor is None:
+            print("[MBS] Does not consider Scheduler or Warmup algorithm")
+        else:
+            print("[MBS] Consider Scheduler or Warmup algorithm")
 
         self.batch_size = batch_size
         self.micro_batch = micro_batch_size
@@ -58,6 +76,7 @@ class MicroBatchStreaming(_MBSBlock):
 
         # self.cpy_strm = Stream(self.device)
         # self.cmp_strm = Stream(self.device)
+        self.debug_msg = debug
 
     def get_model(self):
         return self.module
@@ -90,7 +109,9 @@ class MicroBatchStreaming(_MBSBlock):
                 label = l.to(self.device)
 
                 output: torch.Tensor = self.module( input )
-                loss: torch.Tensor = self.criterion( output, label ) / chunks
+                # loss: torch.Tensor = self.criterion( output, label ) / chunks
+                loss: torch.Tensor = self.criterion( output, label )
+                loss: torch.Tensor = torch.div( loss, chunks )
                 mini_loss += loss.detach().item()
                 loss.backward()
 
@@ -120,6 +141,8 @@ class MicroBatchStreaming(_MBSBlock):
                 if idx <= self.warmup_factor:
                     self.scheduler.step()
 
+            self._debug()
+
     def get_loss(self):
         return self.epoch_loss / self.dataloader.__len__()
 
@@ -136,7 +159,8 @@ class MBSSegmentation(MicroBatchStreaming):
         device_index: Optional[int] = None, 
         batch_size: int = 1, 
         micro_batch_size: int = 1, 
-        bn_factor: bool = False
+        bn_factor: bool = False,
+        debug: Optional[str] = None
     ) -> None:
         super().__init__(
             dataloader, 
@@ -148,7 +172,8 @@ class MBSSegmentation(MicroBatchStreaming):
             device_index=device_index, 
             batch_size=batch_size, 
             micro_batch_size=micro_batch_size, 
-            bn_factor=bn_factor
+            bn_factor=bn_factor,
+            debug=debug
         )
 
     def train(self):
@@ -197,6 +222,8 @@ class MBSSegmentation(MicroBatchStreaming):
             if self.warmup_factor is not None and self.scheduler is not None:
                 if idx <= self.warmup_factor:
                     self.scheduler.step()
+
+            self._debug()
 
     def get_dice(self):
         return sum(self.epoch_dice) / len(self.epoch_dice)

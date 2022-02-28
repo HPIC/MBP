@@ -1,6 +1,7 @@
 from PIL import Image
-from skimage.io import imread
 from torch.utils.data import Dataset
+from torchvision import transforms
+
 import os
 import numpy as np
 
@@ -38,66 +39,32 @@ class CarvanaDataset(Dataset):
         return image, mask
 
 
-class CarvanaTrain(Dataset):
-    def __init__(
-        self, root: str, train: bool=True, image_transform=None, mask_transform=None
-    ):
-        
-        self.root = root
-        self.train = train
-        self.image_transform = image_transform
-        self.mask_transform = mask_transform
-        self.input_path = os.path.join(self.root, "train")
-        self.target_path = os.path.join(self.root, 'train_masks')
-        self.inputs = os.listdir(self.input_path)
-        self.targets = os.listdir(self.target_path)
+class FlowerDataset(Dataset):
+    def __init__(self, path, transform=None) -> None:
+        super().__init__()
+        self.path = path
+        self.files = []
+        for (dirpath, _, filenames) in os.walk(self.path):
+            for f in filenames:
+                if f.endswith('.jpg'):
+                    p = {}
+                    p['image_path'] = dirpath + '/' + f
+                    self.files.append(p)
+        if transform == None:
+            self.transform = transforms.Compose([
+                transforms.ToTensor(),
+                ])
+        else:
+            self.transform = transform
 
     def __len__(self):
-        return len(self.inputs)
+        return len(self.files)
 
-    def __getitem__(self, index: int):
-        # Select the sample
-        input_ID = self.inputs[index]
-        target_ID = self.targets[index]
+    def __getitem__(self, idx):
+        img_path: str = self.files[idx]['image_path']
+        image_label = img_path.split('/')[-2]
+        image = np.array( Image.open( img_path ).convert('RGB') )
+        image = self.transform(image)
 
-        # Load input and target
-        image = imread(os.path.join(self.input_path, input_ID))
-        mask = imread(os.path.join(self.target_path, target_ID))
+        return image, image_label
 
-        # Preprocessing
-        if self.image_transform is not None:
-            image = self.image_transform(image)
-        if self.mask_transform is not None:
-            mask = self.mask_transform(mask)
-
-        return image, mask
-
-
-class CarvanaTest(Dataset):
-    def __init__(
-        self, root: str, train: bool=True, image_transform=None, mask_transform=None
-    ):
-        
-        self.root = root
-        self.train = train
-        self.image_transform = image_transform
-        self.mask_transform = mask_transform
-        self.input_path = os.path.join(self.root, "train")
-        self.inputs = os.listdir(self.input_path)
-
-
-    def __len__(self):
-        return len(self.inputs)
-
-    def __getitem__(self, index: int):
-        # Select the sample
-        input_ID = self.inputs[index]
-
-        # Load input and target
-        image = imread(os.path.join(self.input_path, input_ID))
-
-        # Preprocessing
-        if self.image_transform is not None:
-            image = self.image_transform(image)
-
-        return image
