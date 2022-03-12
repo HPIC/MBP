@@ -1,24 +1,29 @@
-title = "EfficientNet"
+title = "ResNet"
+
+# Model
+[model]
+version = 50
 
 # Setting Optimizer
 [optimizer]
-lr = 0.1
+lr = 0.01
 mometum = 0.9
 decay = 0.0005
 
 # Device Related Configurations
 [gpu]
-device = 1
+device = 0
 
 # Train Related Configurations
 [train]
 epoch = 100
+seed = 10000
 
 # Dataset Related Configurations
 [dataset]
   [dataset.train]
     type="cifar10"
-    path="./dataset/"
+    path="./dataset/cifar10"
     num_classes = 10
     batch_size = 128
     image_size = 32
@@ -28,7 +33,7 @@ epoch = 100
 
   [dataset.test]
     type="cifar10"
-    path="./dataset/"
+    path="./dataset/cifar10"
     num_classes = 10
     batch_size = 64
     image_size = 32
@@ -37,7 +42,11 @@ epoch = 100
     pin_memory = false
 
 # Micro Batch Streaming
-[microbatchstream]
+[mbs]
 enable = false
 batchnorm = false
 micro_batch_size = 32
+
+# Monitoring tool
+[wandb]
+enable = false
