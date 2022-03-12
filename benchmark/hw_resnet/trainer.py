@@ -58,7 +58,7 @@ class ResNetTrainer:
         )
         dataloader = DataLoader(
             dataset,
-            batch_size  =config.batch_size,
+            batch_size  =config.train_batch,
             num_workers =config.num_workers,
             shuffle     =config.shuffle,
             pin_memory  =config.pin_memory,
@@ -75,7 +75,7 @@ class ResNetTrainer:
         )
         dataloader = DataLoader(
             dataset,
-            batch_size  =config.batch_size,
+            batch_size  =config.test_batch,
             num_workers =config.num_workers,
             shuffle     =config.shuffle,
             pin_memory  =config.pin_memory,
@@ -91,7 +91,7 @@ class ResNetTrainer:
             return resnet152(num_classes)
 
     def _print_learning_info(self, dataloader: DataLoader):
-        print(f'WanDB? {self.config.data.wandb.enable}')
+        print(f'WanDB? {self.config.data.wandb}')
         print(f"Random Seed : {self.config.data.train.seed}")
         print(f"Epoch : {self.config.data.train.epoch}")
         print(f"Batch size : {dataloader.batch_size}")
@@ -100,23 +100,23 @@ class ResNetTrainer:
         print(f"pin memory : {dataloader.pin_memory}")
         print(f"num workers : {dataloader.num_workers}")
 
-        if self.config.data.mbs.enable:
+        if self.config.data.mbs:
             print(f">>> micro batch size : {self.config.data.mbs.micro_batch_size}")
             print(f"*** Training ResNet-{self.config.data.model.version} with MBS")
         else:
             print(f"*** Training ResNet-{self.config.data.model.version} (Baseline) ***")
 
     def _check_before_running(self, dataloader: DataLoader):
-        if self.config.data.dataset.train.batch_size != dataloader.batch_size:
+        if self.config.data.dataset.train.train_batch != dataloader.batch_size:
             raise ValueError("Batch size is not equal!")
         if self.config.data.dataset.train.pin_memory != dataloader.pin_memory:
             raise ValueError("Status of pin memory is not equal!")
         if self.config.data.dataset.train.num_workers != dataloader.num_workers:
             raise ValueError("Num of wokers is not equal!")
 
-        if self.config.data.wandb.enable:
+        if self.config.data.wandb:
             name = None
-            if self.config.data.mbs.enable:
+            if self.config.data.mbs:
                 name = f'resnet-{self.config.data.model.version}(mbs)'
             else:
                 name = f'resnet-{self.config.data.model.version}(baseline)'
@@ -129,7 +129,7 @@ class ResNetTrainer:
             tags.append( f'pin memory {dataloader.pin_memory}' )
             tags.append( f'cifar {self.config.data.dataset.train.num_classes}')
 
-            if self.config.data.mbs.enable:
+            if self.config.data.mbs:
                 tags.append( f'mbs {self.config.data.mbs.micro_batch_size}' )
 
             wandb.init(
@@ -168,7 +168,7 @@ class ResNetTrainer:
             weight_decay=self.config.data.optimizer.decay,
         )
 
-        if self.config.data.mbs.enable:
+        if self.config.data.mbs:
             mbs_trainer, self.model = MicroBatchStreaming(
                 dataloader=train_dataloader,
                 model=self.model,
@@ -176,7 +176,7 @@ class ResNetTrainer:
                 optimizer=self.opt,
                 lr_scheduler=None,
                 device_index=self.config.data.gpu.device,
-                batch_size=self.config.data.dataset.train.batch_size,
+                batch_size=self.config.data.dataset.train.train_batch,
                 micro_batch_size=self.config.data.mbs.micro_batch_size,
             ).get_trainer()
 
@@ -192,7 +192,7 @@ class ResNetTrainer:
                 acc = self._val_accuracy(epoch, val_dataloader, device)
 
                 # Update status to WandB
-                if self.config.data.wandb.enable:
+                if self.config.data.wandb:
                     wandb.log( {'train loss': mbs_trainer.get_loss()}, step=epoch )
                     wandb.log( {'epoch time' : sum(self.epoch_avg_time)/len(self.epoch_avg_time)}, step=epoch)
                 print(  f"acc:{acc:.2f}",
@@ -202,7 +202,7 @@ class ResNetTrainer:
 
                 self._save_state_dict( 
                     self.model, 
-                    f"./checkpoint/mbs/resnet_{self.config.data.model.version}/batch_{self.config.data.dataset.train.batch_size}/mb_{self.config.data.mbs.micro_batch_size}/seed_{self.config.data.train.seed}/para.pth" 
+                    f"./checkpoint/mbs/resnet_{self.config.data.model.version}/batch_{self.config.data.dataset.train.train_batch}/mb_{self.config.data.mbs.micro_batch_size}/seed_{self.config.data.train.seed}/para.pth" 
                 )
         else:
             for epoch in range(self.config.data.train.epoch):
@@ -221,7 +221,7 @@ class ResNetTrainer:
 
                 self._save_state_dict( 
                     self.model, 
-                    f"./checkpoint/base/resnet_{self.config.data.model.version}/seed_{self.config.data.train.seed}/para.pth" 
+                    f"./checkpoint/base/resnet_{self.config.data.model.version}/batch_{self.config.data.dataset.train.train_batch}/seed_{self.config.data.train.seed}/para.pth" 
                 )
 
 
@@ -248,7 +248,7 @@ class ResNetTrainer:
         epoch_time = epoch_end - epoch_start
         epoch_avg_loss = sum( losses ) / len( losses )
 
-        if self.config.data.wandb.enable:
+        if self.config.data.wandb:
             wandb.log( {'train loss': epoch_avg_loss}, step=epoch )
             wandb.log( {'epoch time' : epoch_time}, step=epoch)
 
@@ -274,7 +274,7 @@ class ResNetTrainer:
 
         accuracy = 100 * ( correct_top1 / total )
         print( f"\nAccuracy : {accuracy:.2f}" )
-        if self.config.data.wandb.enable:
+        if self.config.data.wandb:
             wandb.log( {'acc': accuracy}, step=epoch )
 
         return accuracy

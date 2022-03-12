@@ -2,50 +2,49 @@ title = "ResNet"
 
 # Model
 [model]
-version = 50
+version=1
 
 # Setting Optimizer
 [optimizer]
-lr = 0.01
-mometum = 0.9
-decay = 0.0005
+lr=0.01
+mometum=0.9
+decay=0.0005
 
 # Device Related Configurations
 [gpu]
-device = 0
+device=0
 
 # Train Related Configurations
 [train]
-epoch = 100
-seed = 10000
+epoch=1
+seed=1
 
 # Dataset Related Configurations
 [dataset]
   [dataset.train]
     type="flower102"
-    path="./dataset/flower102/flower_data/train"
-    num_classes = 102
-    batch_size = 16
-    image_size = 227
-    num_workers = 6
-    shuffle = true
-    pin_memory = true
+    path="./dataset/flower102/train"
+    num_classes=102
+    train_batch=1
+    image_size=224
+    num_workers=6
+    shuffle=true
+    pin_memory=true
 
   [dataset.test]
     type="flower102"
-    path="./dataset/flower102/flower_data/test"
-    num_classes = 102
-    batch_size = 1
-    image_size = 227
-    num_workers = 6
-    shuffle = true
-    pin_memory = true
+    path="./dataset/flower102/valid"
+    num_classes=102
+    test_batch=1
+    image_size=224
+    num_workers=6
+    shuffle=true
+    pin_memory=true
 
 # Micro Batch Streaming
 [mbs]
-enable = false
-micro_batch_size = 8
+enable=false
+micro_batch_size=1
 
 # Monitoring tool
-[wandb]
-enable = false
+wandb=true
