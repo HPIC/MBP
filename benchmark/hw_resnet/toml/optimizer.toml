@@ -1,7 +1,0 @@
-title = "ResNet"
-
-# Setting Optimizer
-[optimizer]
-lr = 0.1
-mometum = 0.9
-decay = 0.0005
