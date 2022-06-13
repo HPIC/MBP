@@ -137,7 +137,10 @@ class MicroBatchStreaming(_MBSBlock):
 
             self._init = self._init and False
 
-            if self.warmup_factor is not None and self.scheduler is not None:
+            if self.scheduler is not None:
+                # print("\t\t\t\tScheduler Doing!", end='\r')
+                self.scheduler.step()
+            elif self.warmup_factor is not None and self.scheduler is not None:
                 if idx <= self.warmup_factor:
                     self.scheduler.step()
 
