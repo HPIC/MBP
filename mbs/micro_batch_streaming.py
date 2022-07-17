@@ -1,4 +1,6 @@
 import math
+import tqdm
+import wandb
 from typing import List, Optional, Union
 import torch
 from torch.nn import Module
@@ -47,7 +49,9 @@ class MicroBatchStreaming(_MBSBlock):
         batch_size: int = 1,
         micro_batch_size: int = 1,
         bn_factor: bool = False,
-        debug: Optional[str] = None
+        pretrain: bool = False,
+        wandb: bool = False,
+        debug: Optional[str] = None,
     ) -> None:
         super().__init__(debug=debug)
         self.device = torch.device(f'cuda:{device_index}')
@@ -61,6 +65,11 @@ class MicroBatchStreaming(_MBSBlock):
             self.module = model
         self.criterion = criterion
         self.optimizer = optimizer
+        
+        self.pretrain = pretrain
+        if self.pretrain:
+            print("[MBS] ViT Pretrain Mode")
+        self.wandb = wandb
 
         ''' Warmup arguments '''
         self.scheduler = lr_scheduler
@@ -84,12 +93,14 @@ class MicroBatchStreaming(_MBSBlock):
     def get_trainer(self):
         return self, self.module
 
-    def train(self):
+    def train(self, current_epoch:int, total_epoch:int):
         data0: torch.Tensor
         data1: torch.Tensor
         self.epoch_loss = 0
         self.module.train()
-        for idx, (data0, data1) in enumerate( self.dataloader ):
+        epoch_iterator = tqdm.tqdm(self.dataloader, desc="Training (X / X Steps) (lr=X.X) (loss=X.X)",dynamic_ncols=True,)
+        
+        for idx, (data0, data1) in enumerate(epoch_iterator):
             mini_loss = 0
             # size = self.micro_batch
             chunks = self.chunks
@@ -108,12 +119,18 @@ class MicroBatchStreaming(_MBSBlock):
                 input = i.to(self.device)
                 label = l.to(self.device)
 
-                output: torch.Tensor = self.module( input )
-                # loss: torch.Tensor = self.criterion( output, label ) / chunks
-                loss: torch.Tensor = self.criterion( output, label )
-                loss: torch.Tensor = torch.div( loss, chunks )
-                mini_loss += loss.detach().item()
-                loss.backward()
+                if self.pretrain:
+                    loss = self.module( input, label )
+                    loss: torch.Tensor = torch.div( loss, chunks )
+                    mini_loss += loss.detach().item()
+                    loss.backward()
+                else:
+                    output, _ = self.module( input )
+                    # loss: torch.Tensor = self.criterion( output, label ) / chunks
+                    loss: torch.Tensor = self.criterion( output, label )
+                    loss: torch.Tensor = torch.div( loss, chunks )
+                    mini_loss += loss.detach().item()
+                    loss.backward()
 
             # for cidx in range(chunks):
             #     with stream( self.cpy_strm ):
@@ -133,19 +150,21 @@ class MicroBatchStreaming(_MBSBlock):
             #         mini_loss += loss.detach().item()
 
             self.optimizer.step()
+            if self.scheduler is not None:
+            # print("\t\t\t\tScheduler Doing!", end='\r')
+                self.scheduler.step()
             self.epoch_loss += mini_loss
 
             self._init = self._init and False
-
-            if self.scheduler is not None:
-                # print("\t\t\t\tScheduler Doing!", end='\r')
-                self.scheduler.step()
-            elif self.warmup_factor is not None and self.scheduler is not None:
-                if idx <= self.warmup_factor:
-                    self.scheduler.step()
-
+            
             self._debug()
+            if self.wandb:
+                wandb.log( {'train loss': mini_loss, 'learning rate': self.scheduler.get_last_lr()[0], 'epoch': current_epoch, 'batch': idx})
 
+            epoch_iterator.set_description(
+                    "Training (%d / %d Steps) (lr=%2.5f) (loss=%2.5f)" % (current_epoch+1, total_epoch, self.scheduler.get_last_lr()[0], mini_loss))
+
+            
     def get_loss(self):
         return self.epoch_loss / self.dataloader.__len__()
 
