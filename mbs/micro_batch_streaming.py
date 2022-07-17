@@ -50,6 +50,7 @@ class MicroBatchStreaming(_MBSBlock):
         micro_batch_size: int = 1,
         bn_factor: bool = False,
         pretrain: bool = False,
+        max_grad_norm: int = 1,
         wandb: bool = False,
         debug: Optional[str] = None,
     ) -> None:
@@ -70,6 +71,7 @@ class MicroBatchStreaming(_MBSBlock):
         if self.pretrain:
             print("[MBS] ViT Pretrain Mode")
         self.wandb = wandb
+        self.max_grad_norm = max_grad_norm
 
         ''' Warmup arguments '''
         self.scheduler = lr_scheduler
@@ -149,9 +151,9 @@ class MicroBatchStreaming(_MBSBlock):
             #         loss.backward()
             #         mini_loss += loss.detach().item()
 
+            torch.nn.utils.clip_grad_norm_(self.module.parameters(), self.max_grad_norm)
             self.optimizer.step()
             if self.scheduler is not None:
-            # print("\t\t\t\tScheduler Doing!", end='\r')
                 self.scheduler.step()
             self.epoch_loss += mini_loss
 
