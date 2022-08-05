@@ -90,7 +90,7 @@ class ResNetTrainer:
             return resnet152(num_classes)
 
     def _print_learning_info(self, dataloader: DataLoader):
-        print(f'WanDB? {self.config.data.wandb}')
+        print(f'WanDB? {self.config.data.wandb.enable}')
         print(f"Random Seed : {self.config.data.train.seed}")
         print(f"Epoch : {self.config.data.train.epoch}")
         print(f"Batch size : {dataloader.batch_size}")
@@ -113,7 +113,7 @@ class ResNetTrainer:
         if self.config.data.dataset.train.num_workers != dataloader.num_workers:
             raise ValueError("Num of wokers is not equal!")
 
-        if self.config.data.wandb.wandb:
+        if self.config.data.wandb.enable:
             name = None
             if self.config.data.mbs.enable:
                 name = f'resnet-{self.config.data.model.version}(mbs)'
@@ -191,7 +191,7 @@ class ResNetTrainer:
                 acc = self._val_accuracy(epoch, val_dataloader, device)
 
                 # Update status to WandB
-                if self.config.data.wandb.wandb:
+                if self.config.data.wandb.enable:
                     wandb.log( {'train loss': train_loss}, step=epoch )
                     wandb.log( {'epoch time' : sum(self.epoch_avg_time)/len(self.epoch_avg_time)}, step=epoch)
                 print(  f"acc:{acc:.2f}",
@@ -247,7 +247,7 @@ class ResNetTrainer:
         epoch_time = epoch_end - epoch_start
         epoch_avg_loss = sum( losses ) / len( losses )
 
-        if self.config.data.wandb.wandb:
+        if self.config.data.wandb.enable:
             wandb.log( {'train loss': epoch_avg_loss}, step=epoch )
             wandb.log( {'epoch time' : epoch_time}, step=epoch)
 
@@ -275,7 +275,7 @@ class ResNetTrainer:
         inference_time = end_time - start_time
         accuracy = 100 * ( correct_top1 / total )
         print( f"\nAccuracy : {accuracy:.2f}" )
-        if self.config.data.wandb.wandb:
+        if self.config.data.wandb.enable:
             wandb.log( {'acc': accuracy}, step=epoch )
             wandb.log( {'inf time': inference_time}, step=epoch)
 

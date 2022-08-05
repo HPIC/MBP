@@ -12,7 +12,7 @@ decay=0.0005
 
 # Device Related Configurations
 [gpu]
-device=0
+device=1
 
 # Train Related Configurations
 [train]
@@ -48,4 +48,4 @@ micro_batch_size=1
 
 # Monitoring tool
 [wandb]
-wandb=true
+enable=false

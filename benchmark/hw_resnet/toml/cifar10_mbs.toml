@@ -1,5 +1,8 @@
 title = "EfficientNet"
 
+[model]
+version=50
+
 # Setting Optimizer
 [optimizer]
 lr = 0.1
@@ -12,54 +15,36 @@ device = 0
 
 # Train Related Configurations
 [train]
-<<<<<<< HEAD
 epoch = 100
-=======
-epoch = 50
->>>>>>> f2306ef8eb7bc9a9a0af65693227c56d651e6043
+seed=42
 
 # Dataset Related Configurations
 [dataset]
   [dataset.train]
     type="cifar10"
-    path="./dataset/"
+    path="./dataset/cifar10"
     num_classes = 10
-<<<<<<< HEAD
     batch_size = 128
     image_size = 32
-    num_worker = 0
+    num_workers = 6
     shuffle = false
     pin_memory = true
-=======
-    batch_size = 256
-    image_size = 32
-    num_worker = 16
-    shuffle = false
-    pin_memory = false
-    prefetch = 2
->>>>>>> f2306ef8eb7bc9a9a0af65693227c56d651e6043
 
   [dataset.test]
     type="cifar10"
-    path="./dataset/"
+    path="./dataset/cifar10"
     num_classes = 10
     batch_size = 64
-<<<<<<< HEAD
     image_size = 32
-    num_worker = 0
+    num_workers = 6
     shuffle = false
     pin_memory = false
-=======
-    image_size = 256
-    num_worker = 16
->>>>>>> f2306ef8eb7bc9a9a0af65693227c56d651e6043
 
 # Micro Batch Streaming
-[microbatchstream]
+[mbs]
 enable = true
 batchnorm = false
-<<<<<<< HEAD
 micro_batch_size = 32
-=======
-micro_batch_size = 64
->>>>>>> f2306ef8eb7bc9a9a0af65693227c56d651e6043
+
+[wandb]
+enable = false
