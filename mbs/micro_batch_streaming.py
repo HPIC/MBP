@@ -34,6 +34,7 @@ class _MBSBlock:
             print("\n\n\n")
             raise Exception(f"[MBS Debug] early stop")
 
+
 class MicroBatchStreaming(_MBSBlock):
     def __init__(
         self,
@@ -60,6 +61,7 @@ class MicroBatchStreaming(_MBSBlock):
             print("[MBS] Does not consider BatchNorm layers")
             self.module = model
         self.criterion = criterion
+        self.mean = self.criterion.reduction
         self.optimizer = optimizer
 
         ''' Warmup arguments '''
@@ -74,8 +76,6 @@ class MicroBatchStreaming(_MBSBlock):
         self.micro_batch = micro_batch_size
         self.chunks = math.ceil( self.batch_size / self.micro_batch )
 
-        # self.cpy_strm = Stream(self.device)
-        # self.cmp_strm = Stream(self.device)
         self.debug_msg = debug
 
     def get_model(self):
@@ -84,18 +84,18 @@ class MicroBatchStreaming(_MBSBlock):
     def get_trainer(self):
         return self, self.module
 
-    def train(self):
+    def train(self) -> float:
         data0: torch.Tensor
         data1: torch.Tensor
-        self.epoch_loss = 0
+        epoch_loss = 0
+        total_size = 0
         self.module.train()
         for idx, (data0, data1) in enumerate( self.dataloader ):
             mini_loss = 0
-            # size = self.micro_batch
+            total_size += data0.size(0)
             chunks = self.chunks
             if data0.size(0) != self.batch_size:
                 chunks = math.ceil( data0.size(0) / self.micro_batch )
-                # size = math.ceil( data0.size(0) / chunks )
 
             chunk_data0 = data0.chunk( chunks )
             chunk_data1 = data1.chunk( chunks )
@@ -109,45 +109,24 @@ class MicroBatchStreaming(_MBSBlock):
                 label = l.to(self.device)
 
                 output: torch.Tensor = self.module( input )
-                # loss: torch.Tensor = self.criterion( output, label ) / chunks
                 loss: torch.Tensor = self.criterion( output, label )
-                loss: torch.Tensor = torch.div( loss, chunks )
-                mini_loss += loss.detach().item()
+                if self.mean:
+                    loss: torch.Tensor = torch.div( loss, chunks )
                 loss.backward()
-
-            # for cidx in range(chunks):
-            #     with stream( self.cpy_strm ):
-            #         lower = cidx * size
-            #         upper = ( cidx + 1 ) * size
-            #         da0: torch.Tensor = data0[lower:upper].to(self.device)
-            #         da1: torch.Tensor = data1[lower:upper].to(self.device)
-
-            #     self.cpy_strm.wait_stream( self.cmp_strm )
-            #     self.cmp_strm.wait_stream( self.cpy_strm )
-            #     with stream( self.cmp_strm ):
-            #         da0.record_stream( self.cmp_strm )
-            #         da1.record_stream( self.cmp_strm )
-            #         output: torch.Tensor = self.module( da0 )
-            #         loss: torch.Tensor = self.criterion( output, da1 ) / chunks
-            #         loss.backward()
-            #         mini_loss += loss.detach().item()
+                mini_loss += loss.detach().item()
 
             self.optimizer.step()
-            self.epoch_loss += mini_loss
+            epoch_loss += mini_loss
 
             self._init = self._init and False
 
-            if self.scheduler is not None:
-                # print("\t\t\t\tScheduler Doing!", end='\r')
-                self.scheduler.step()
-            elif self.warmup_factor is not None and self.scheduler is not None:
+            if self.warmup_factor is not None:
                 if idx <= self.warmup_factor:
                     self.scheduler.step()
+            elif self.scheduler is not None:
+                self.scheduler.step()
 
-            self._debug()
-
-    def get_loss(self):
-        return self.epoch_loss / self.dataloader.__len__()
+        return epoch_loss / total_size
 
 
 class MBSSegmentation(MicroBatchStreaming):
