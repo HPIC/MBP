@@ -1,0 +1,1 @@
+{"train loss": 1.1563623935251321, "epoch avg time": 72.92989410273731, "top-1": 59.69, "top-5": 95.52000000000001, "_runtime": 636, "_timestamp": 1633658047, "_step": 7, "_wandb": {"runtime": 637}}

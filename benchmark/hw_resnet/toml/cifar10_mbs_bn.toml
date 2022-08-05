@@ -12,7 +12,11 @@ device = 0
 
 # Train Related Configurations
 [train]
+<<<<<<< HEAD
 epoch = 100
+=======
+epoch = 50
+>>>>>>> f2306ef8eb7bc9a9a0af65693227c56d651e6043
 
 # Dataset Related Configurations
 [dataset]
@@ -20,9 +24,18 @@ epoch = 100
     type="cifar10"
     path="./dataset/"
     num_classes = 10
+<<<<<<< HEAD
     batch_size = 512
     image_size = 32
     num_worker = 16
+=======
+    batch_size = 256
+    image_size = 32
+    num_worker = 16
+    shuffle = false
+    pin_memory = true
+    prefetch = 2
+>>>>>>> f2306ef8eb7bc9a9a0af65693227c56d651e6043
 
   [dataset.test]
     type="cifar10"
@@ -30,9 +43,17 @@ epoch = 100
     num_classes = 10
     batch_size = 64
     image_size = 256
+<<<<<<< HEAD
+=======
+    num_worker = 16
+>>>>>>> f2306ef8eb7bc9a9a0af65693227c56d651e6043
 
 # Micro Batch Streaming
 [microbatchstream]
 enable = true
 batchnorm = true
+<<<<<<< HEAD
 micro_batch_size = 64
+=======
+micro_batch_size = 32
+>>>>>>> f2306ef8eb7bc9a9a0af65693227c56d651e6043

@@ -8,11 +8,19 @@ decay = 0.0005
 
 # Device Related Configurations
 [gpu]
+<<<<<<< HEAD
 device = 1
 
 # Train Related Configurations
 [train]
 epoch = 10
+=======
+device = 0
+
+# Train Related Configurations
+[train]
+epoch = 100
+>>>>>>> f2306ef8eb7bc9a9a0af65693227c56d651e6043
 
 # Dataset Related Configurations
 [dataset]
@@ -20,24 +28,40 @@ epoch = 10
     type="cifar100"
     path="./dataset/"
     num_classes = 100
+<<<<<<< HEAD
     batch_size = 256
     image_size = 32
     num_worker = 0
     shuffle = false
     pin_memory = false
+=======
+    batch_size = 128
+    image_size = 64
+    num_worker = 16
+>>>>>>> f2306ef8eb7bc9a9a0af65693227c56d651e6043
 
   [dataset.test]
     type="cifar100"
     path="./dataset/"
     num_classes = 100
     batch_size = 64
+<<<<<<< HEAD
     image_size = 32
     num_worker = 0
     shuffle = false
     pin_memory = false
+=======
+    image_size = 256
+    num_worker = 16
+>>>>>>> f2306ef8eb7bc9a9a0af65693227c56d651e6043
 
 # Micro Batch Streaming
 [microbatchstream]
 enable = true
+<<<<<<< HEAD
 batchnorm = false
 micro_batch_size = 64
+=======
+batchnorm = true
+micro_batch_size = 32
+>>>>>>> f2306ef8eb7bc9a9a0af65693227c56d651e6043
