@@ -112,3 +112,19 @@ def conv_3x3(channels: int, stride: int) -> Operation:
         nn.BatchNorm2d(c),
     )
     return Operation('conv_3x3', module)
+
+
+# Operations for AmoebaNet-A, AmoebaNet-B, and AmoebaNet-C models
+
+def sep_3x3(channels: int, strid: int) -> Operation:
+    c = channels
+    module = nn.Sequential(
+        nn.ReLU(inplace=False),
+    )
+
+def sep_5x5(channels: int, strid: int) -> Operation:
+    pass
+
+def sep_7x7(channels: int, strid: int) -> Operation:
+    pass
+

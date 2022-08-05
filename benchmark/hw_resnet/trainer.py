@@ -3,7 +3,6 @@ import math, random
 import json
 import time
 from typing import Dict, List
-from torch.utils.data import dataloader
 
 import wandb
 
@@ -100,7 +99,7 @@ class ResNetTrainer:
         print(f"pin memory : {dataloader.pin_memory}")
         print(f"num workers : {dataloader.num_workers}")
 
-        if self.config.data.mbs:
+        if self.config.data.mbs.enable:
             print(f">>> micro batch size : {self.config.data.mbs.micro_batch_size}")
             print(f"*** Training ResNet-{self.config.data.model.version} with MBS")
         else:
@@ -114,9 +113,9 @@ class ResNetTrainer:
         if self.config.data.dataset.train.num_workers != dataloader.num_workers:
             raise ValueError("Num of wokers is not equal!")
 
-        if self.config.data.wandb:
+        if self.config.data.wandb.wandb:
             name = None
-            if self.config.data.mbs:
+            if self.config.data.mbs.enable:
                 name = f'resnet-{self.config.data.model.version}(mbs)'
             else:
                 name = f'resnet-{self.config.data.model.version}(baseline)'
@@ -127,9 +126,9 @@ class ResNetTrainer:
             tags.append( f'image {self.config.data.dataset.train.image_size}' )
             tags.append( f'worker {dataloader.num_workers}' )
             tags.append( f'pin memory {dataloader.pin_memory}' )
-            tags.append( f'cifar {self.config.data.dataset.train.num_classes}')
+            tags.append( f'seed {self.config.data.train.seed}' )
 
-            if self.config.data.mbs:
+            if self.config.data.mbs.enable:
                 tags.append( f'mbs {self.config.data.mbs.micro_batch_size}' )
 
             wandb.init(
@@ -168,7 +167,7 @@ class ResNetTrainer:
             weight_decay=self.config.data.optimizer.decay,
         )
 
-        if self.config.data.mbs:
+        if self.config.data.mbs.enable:
             mbs_trainer, self.model = MicroBatchStreaming(
                 dataloader=train_dataloader,
                 model=self.model,
@@ -192,7 +191,7 @@ class ResNetTrainer:
                 acc = self._val_accuracy(epoch, val_dataloader, device)
 
                 # Update status to WandB
-                if self.config.data.wandb:
+                if self.config.data.wandb.wandb:
                     wandb.log( {'train loss': mbs_trainer.get_loss()}, step=epoch )
                     wandb.log( {'epoch time' : sum(self.epoch_avg_time)/len(self.epoch_avg_time)}, step=epoch)
                 print(  f"acc:{acc:.2f}",
@@ -248,7 +247,7 @@ class ResNetTrainer:
         epoch_time = epoch_end - epoch_start
         epoch_avg_loss = sum( losses ) / len( losses )
 
-        if self.config.data.wandb:
+        if self.config.data.wandb.wandb:
             wandb.log( {'train loss': epoch_avg_loss}, step=epoch )
             wandb.log( {'epoch time' : epoch_time}, step=epoch)
 
@@ -261,6 +260,7 @@ class ResNetTrainer:
         total = 0
         correct_top1 = 0
         self.model.eval()
+        start_time = time.perf_counter()
         with torch.no_grad():
             for _, (input, label) in enumerate(dataloader):
                 input: Tensor = input.to(device)
@@ -271,11 +271,13 @@ class ResNetTrainer:
                 _, pred = torch.max(output, 1)
                 total += label.size(0)
                 correct_top1 += (pred == label).sum().item()
-
+        end_time = time.perf_counter()
+        inference_time = end_time - start_time
         accuracy = 100 * ( correct_top1 / total )
         print( f"\nAccuracy : {accuracy:.2f}" )
-        if self.config.data.wandb:
+        if self.config.data.wandb.wandb:
             wandb.log( {'acc': accuracy}, step=epoch )
+            wandb.log( {'inf time': inference_time}, step=epoch)
 
         return accuracy
 

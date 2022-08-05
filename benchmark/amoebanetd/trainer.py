@@ -140,14 +140,17 @@ class AmoebaNetTrainer:
             # nesterov=True
         )
         # self.opt = torch.optim.RMSprop(
-        #     self.model.parameters()
+        #     self.model.parameters(),
+        #     lr=self.config.data.optimizer.lr,
+        #     momentum=self.config.data.optimizer.mometum,
+        #     weight_decay=self.config.data.optimizer.decay,
         # )
 
         # Define Scheduler
-        steps = len(train_dataloader)
+        steps = int(len(train_dataloader) * 2)
         lr_multiplier = max(
             1.0, 
-            self.config.data.dataset.train.train_batch / self.config.data.model.num_filters
+            int(self.config.data.dataset.train.train_batch / 2) / self.config.data.model.num_filters
         )
 
         def gradual_warmup_linear_scaling(step: int) -> float:
@@ -156,6 +159,10 @@ class AmoebaNetTrainer:
             # Gradual warmup
             warmup_ratio = min(4.0, epoch) / 4.0
             multiplier = warmup_ratio * (lr_multiplier - 1.0) + 1.0
+
+            # print(
+            #         step, steps, epoch, lr_multiplier, warmup_ratio, multiplier
+            #     )
 
             if epoch < 30:
                 return 1.0 * multiplier
@@ -173,7 +180,7 @@ class AmoebaNetTrainer:
                 model=self.model,
                 criterion=self.criterion,
                 optimizer=self.opt,
-                lr_scheduler=None,
+                lr_scheduler=self.scheduler,
                 device_index=self.config.data.gpu.device,
                 batch_size=self.config.data.dataset.train.train_batch,
                 micro_batch_size=self.config.data.mbs.micro_batch_size,

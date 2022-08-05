@@ -1,6 +1,7 @@
 from torch.utils.data.dataloader import DataLoader
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
+from torchvision.datasets import ImageFolder
 
 def get_dataset(path, dataset_type, args, is_train):
     # if dataset_type == 'imagenet2012':
@@ -13,6 +14,8 @@ def get_dataset(path, dataset_type, args, is_train):
         return rtn_cifar10(path, args, is_train)
     elif dataset_type == 'cifar100':
         return rtn_cifar100(path, args, is_train)
+    elif dataset_type == 'flower102':
+        return rtn_flower( path, args)
 
 def rtn_imagenet( path, config, args, is_train: bool = True):
     if is_train:
@@ -83,3 +86,11 @@ def rtn_cifar100(path, args, is_train=True):
     )
     return dataset
 
+
+def rtn_flower(path, args):
+    normalize = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Resize( (args.image_size, args.image_size) ),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    ])
+    return ImageFolder( path, normalize )
