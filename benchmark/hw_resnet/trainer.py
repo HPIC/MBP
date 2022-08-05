@@ -183,7 +183,7 @@ class ResNetTrainer:
                 print( f"[{epoch+1}/{self.config.data.train.epoch}]" )
                 # Train
                 start = time.perf_counter()
-                mbs_trainer.train()
+                train_loss = mbs_trainer.train()
                 end = time.perf_counter()
                 self.epoch_avg_time.append( end - start )
 
@@ -192,11 +192,11 @@ class ResNetTrainer:
 
                 # Update status to WandB
                 if self.config.data.wandb.wandb:
-                    wandb.log( {'train loss': mbs_trainer.get_loss()}, step=epoch )
+                    wandb.log( {'train loss': train_loss}, step=epoch )
                     wandb.log( {'epoch time' : sum(self.epoch_avg_time)/len(self.epoch_avg_time)}, step=epoch)
                 print(  f"acc:{acc:.2f}",
                         f"epoch time: {sum(self.epoch_avg_time)/len(self.epoch_avg_time)}",
-                        f"loss : {mbs_trainer.get_loss()}",
+                        f"loss : {train_loss}",
                     )
 
                 self._save_state_dict( 
