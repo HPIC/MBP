@@ -25,8 +25,8 @@ seed=10000
     type="flower102"
     path="./dataset/flower102/train"
     num_classes=102
-    train_batch=1
-    image_size=500
+    train_batch=32
+    image_size=224
     num_workers=6
     shuffle=true
     pin_memory=true
@@ -35,16 +35,16 @@ seed=10000
     type="flower102"
     path="./dataset/flower102/valid"
     num_classes=102
-    test_batch=1
-    image_size=500
+    test_batch=2
+    image_size=224
     num_workers=6
     shuffle=true
     pin_memory=true
 
 # Micro Batch Streaming
 [mbs]
-enable=false
-micro_batch_size=1
+enable=true
+micro_batch_size=16
 
 # Monitoring tool
 [wandb]

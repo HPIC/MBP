@@ -11,13 +11,14 @@ from torch.utils.data import DataLoader
 
 
 class _MBSBlock:
+    _init: bool = True
+    _bn: bool = False
+    module: Module
+
     def __init__(
         self,
         debug: Optional[str] = None
     ) -> None:
-        self._init = True
-        self._bn = False
-
         self.debug_msg = debug
 
     def _debug(self):
@@ -62,10 +63,8 @@ class MicroBatchStreaming(_MBSBlock):
             print("[MBS] Does not consider BatchNorm layers")
             self.module = model
         self.criterion = criterion
-        self.mean = False
-        if self.criterion.reduction == "mean":
-            print(f"[MBS] Loss function is based on {criterion.reduction} reduction")
-            self.mean = True
+        print(f"[MBS] Loss function is based on {criterion.reduction} reduction")
+        self.mean = True if self.criterion.reduction == "mean" else False
         self.optimizer = optimizer
 
         ''' Warmup arguments '''
@@ -79,8 +78,6 @@ class MicroBatchStreaming(_MBSBlock):
         self.batch_size = batch_size
         self.micro_batch = micro_batch_size
         self.chunks = math.ceil( self.batch_size / self.micro_batch )
-
-        self.debug_msg = debug
 
     def get_model(self):
         return self.module
@@ -115,7 +112,7 @@ class MicroBatchStreaming(_MBSBlock):
                 output: torch.Tensor = self.module( input )
                 loss: torch.Tensor = self.criterion( output, label )
                 if self.mean:
-                    loss: torch.Tensor = torch.div( loss, chunks )
+                    loss: torch.Tensor = loss.div(chunks)
                 loss.backward()
                 mini_loss += loss.detach().item()
 
@@ -131,7 +128,6 @@ class MicroBatchStreaming(_MBSBlock):
                 self.scheduler.step()
 
         return epoch_loss / total_size
-
 
 
 class MBSSegmentation(MicroBatchStreaming):
