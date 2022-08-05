@@ -698,3 +698,5 @@ benchmark/*/runs
 benchmark/*/checkpoint
 benchmark/*/runs-mbs
 benchmark/*/runs-naive
+
+**/*.sh
