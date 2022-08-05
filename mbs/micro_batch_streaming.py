@@ -1,18 +1,12 @@
 import math
-from typing import List, Optional, Union
+from typing import Optional
+
 import torch
 from torch.nn import Module
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader
 from torch.profiler import profile, ProfilerActivity
-
-from torch.cuda import (
-    Stream,
-    stream,
-    current_stream,
-    default_stream,
-)
 
 from .wrap_model import MBSBatchNorm
 
