@@ -680,7 +680,6 @@ tags
 benchmark/*/dataset/*
 benchmark/*/loss/*.json
 benchmark/*/parameters/*
-benchmark/*/wandb/*
 benchmark/*/result/*
 
 **/*.json
@@ -700,3 +699,4 @@ benchmark/*/runs-mbs
 benchmark/*/runs-naive
 
 **/*.sh
+**/wandb/*
