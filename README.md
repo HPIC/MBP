@@ -6,12 +6,12 @@ Recent deep learning models are difficult to train using a large batch size, bec
 
 ## Models for paper
 - Image classification models
-    - ResNet-50 (./benchmark/hw_resnet)
+    - ResNet-50
         - optimizer : SGD
         - learning rate : 0.1
         - momentum : 0.9
         - decay : 0.0005
-    - ResNet-101 (./benchmark/hw_resnet)
+    - ResNet-101
         - optimizer : SGD
         - learning rate : 0.1
         - momentum : 0.9

@@ -62,7 +62,10 @@ class MicroBatchStreaming(_MBSBlock):
             print("[MBS] Does not consider BatchNorm layers")
             self.module = model
         self.criterion = criterion
-        self.mean = self.criterion.reduction
+        self.mean = False
+        if self.criterion.reduction == "mean":
+            print(f"[MBS] Loss function is based on {criterion.reduction} reduction")
+            self.mean = True
         self.optimizer = optimizer
 
         ''' Warmup arguments '''
