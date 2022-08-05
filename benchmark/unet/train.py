@@ -306,7 +306,7 @@ if __name__ == '__main__':
         for epoch in range(1, settings.EPOCH + 1):
             print(epoch, "/", settings.EPOCH)
             start = time.perf_counter()
-            mbs_trainer.train_profile()
+            loss, dice = mbs_trainer.train()
             finish = time.perf_counter()
             print('epoch time', finish - start, ' s')
             # val_loss, val_dice = eval_training(
