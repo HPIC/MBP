@@ -9,6 +9,7 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader
 
+from .micro_batch_streaming import _MicroBatchStreaming
 
 class _MBSBlock:
     _init: bool = True
@@ -33,7 +34,8 @@ class _MBSBlock:
 __all__ = [
     MBSBatchNorm,
     "MicroBatchStreaming",
-    "MBSSegmentation"
+    "MBSSegmentation",
+    _MicroBatchStreaming
 ]
 
 
@@ -89,11 +91,10 @@ class MicroBatchStreaming(_MBSBlock):
         data0: torch.Tensor
         data1: torch.Tensor
         epoch_loss = 0
-        total_size = 0
+        total_size = self.dataloader.__len__()
         self.module.train()
         for idx, (data0, data1) in enumerate( self.dataloader ):
             mini_loss = 0
-            total_size += data0.size(0)
             chunks = self.chunks
             if data0.size(0) != self.batch_size:
                 chunks = math.ceil( data0.size(0) / self.micro_batch )
@@ -169,10 +170,9 @@ class MBSSegmentation(MicroBatchStreaming):
 
         epoch_loss = 0
         epoch_dice = 0
-        total_size = 0
+        total_size = self.dataloader.__len__()
         self.module.train()
         for idx, (data0, data1) in enumerate( self.dataloader ):
-            total_size += data0.size(0)
             mini_loss = 0
             mini_dice = 0
             chunks = self.chunks
