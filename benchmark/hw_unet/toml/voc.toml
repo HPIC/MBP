@@ -1,0 +1,45 @@
+title = "U-Net"
+
+# Setting Optimizer
+[optimizer]
+lr=0.01
+mometum=0.9
+decay=0.0005
+
+# Device Related Configurations
+[gpu]
+device=0
+
+# Train Related Configurations
+[train]
+epoch=100
+seed=10000
+
+# Dataset Related Configurations
+[dataset]
+  [dataset.train]
+    type="voc2012"
+    path="./dataset/voc2012"
+    train_batch=8
+    image_size=224
+    num_workers=6
+    shuffle=true
+    pin_memory=true
+
+  [dataset.test]
+    type="voc2012"
+    path="./dataset/voc2012"
+    test_batch=2
+    image_size=224
+    num_workers=6
+    shuffle=true
+    pin_memory=true
+
+# Micro Batch Streaming
+[mbs]
+enable=false
+micro_batch_size=16
+
+# Monitoring tool
+[wandb]
+enable=true
