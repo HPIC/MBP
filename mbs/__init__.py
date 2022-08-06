@@ -9,7 +9,6 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader
 
-from .micro_batch_streaming import _MicroBatchStreaming
 
 class _MBSBlock:
     _init: bool = True
@@ -35,7 +34,6 @@ __all__ = [
     MBSBatchNorm,
     "MicroBatchStreaming",
     "MBSSegmentation",
-    _MicroBatchStreaming
 ]
 
 
