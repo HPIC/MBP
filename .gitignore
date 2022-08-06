@@ -681,6 +681,7 @@ benchmark/*/dataset/*
 benchmark/*/loss/*.json
 benchmark/*/parameters/*
 benchmark/*/result/*
+benchmark/*/results/*
 
 **/*.json
 
