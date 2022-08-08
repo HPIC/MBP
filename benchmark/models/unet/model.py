@@ -112,3 +112,6 @@ def unet_1156():
 
 def unet_3156():
     return UNet(in_channels=3, out_channels=1, depth=5, cf=6)
+
+def unet_3356():
+    return UNet(in_channels=3, out_channels=3, depth=5, cf=6)
