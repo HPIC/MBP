@@ -5,7 +5,7 @@ import os
 import wandb
 
 # Get dataset and model
-from models.unet import unet_3156
+from models.unet import unet_3156, unet_3356, UNet
 
 # PyTorch
 import torch
@@ -15,8 +15,9 @@ import torchvision.utils as vutils
 
 from util.config_parser import ConfigParser, DotDict
 from util.util import ensure_dir, ensure_file_can_create, prepare_device
-from util.losses import DiceBCELoss, DiceLoss
-from util.dataloder import get_dataloader
+from util.losses import DiceLoss
+from util.dataloder import get_dataloader, get_vocloader, get_voc_dataloader
+from util.dataset import LABELS
 
 
 # Get Micro-batch streaming.
@@ -34,8 +35,9 @@ class UNetTrainer:
 
     @classmethod
     def _get_train_dataloader(cls, config: DotDict) -> DataLoader:
-        return get_dataloader(
+        return get_voc_dataloader(
             root        =config.path,
+            image_size  =config.image_size,
             train       =True,
             batch_size  =config.train_batch,
             num_workers =config.num_workers,
@@ -45,8 +47,9 @@ class UNetTrainer:
 
     @classmethod
     def _get_test_dataloader(cls, config: DotDict) -> DataLoader:
-        return get_dataloader(
+        return get_voc_dataloader(
             root        =config.path,
+            image_size  =config.image_size,
             train       =False,
             batch_size  =config.test_batch,
             num_workers =config.num_workers,
@@ -184,14 +187,23 @@ class UNetTrainer:
         device, _ = prepare_device(target=self.config.data.gpu.device)
         train_dataloader = self._get_train_dataloader( self.config.data.dataset.train )
         val_dataloader = self._get_test_dataloader( self.config.data.dataset.test )
+        # train_dataloader, val_dataloader = get_vocloader(
+        #     root=self.config.data.dataset.train.path,
+        #     image_size=self.config.data.dataset.train.image_size,
+        #     train_batch=self.config.data.dataset.train.train_batch,
+        #     test_batch=self.config.data.dataset.test.test_batch,
+        #     num_workers=self.config.data.dataset.train.num_workers,
+        #     pin_memory=self.config.data.dataset.train.pin_memory
+        # )
+        print(len(LABELS))
 
         # build model and loss, optimizer
-        self.model = unet_3156().to(device)
+        self.model = UNet(len(LABELS)).to(device)
         self.criterion = DiceLoss().to(device)
-        self.opt = torch.optim.SGD( 
+        self.opt = torch.optim.Adam( 
             self.model.parameters(), 
             lr=self.config.data.optimizer.lr,
-            momentum=self.config.data.optimizer.mometum,
+            # momentum=self.config.data.optimizer.mometum,
             weight_decay=self.config.data.optimizer.decay,
         )
 
@@ -227,17 +239,17 @@ class UNetTrainer:
                 # Update status to WandB
                 if self.config.data.wandb.enable:
                     wandb.log( {'train loss': train_loss}, step=epoch )
-                    wandb.log( {'train acc': train_acc}, step=epoch )
+                    wandb.log( {'train dice': train_acc}, step=epoch )
                     wandb.log( {'epoch time' : epoch_time}, step=epoch)
 
                 print(
-                        f"[{epoch}/{self.config.data.train.epoch}]",
-                        f"[{train_dataloader.__len__()}/{train_dataloader.__len__()}]",
-                        f"train acc:{epoch_avg_dice:.2f}",
-                        f"test acc:{test_acc:.2f}",
-                        f"epoch time: {epoch_time}",
-                        f"train loss : {epoch_avg_loss}",
-                        f"test loss: {test_loss}"
+                        f"[{epoch+1}/{self.config.data.train.epoch}]",
+                        f"[{train_dataloader.__len__()}/{train_dataloader.__len__()}]\n",
+                        f"train dice:{train_acc:.2f}",
+                        f"test dice:{test_acc:.2f} |",
+                        f"epoch time: {epoch_time:.2f} |",
+                        f"train loss : {train_loss:.2f}",
+                        f"test loss: {test_loss:.2f}"
                         # end='\r',
                     )
 
@@ -255,13 +267,13 @@ class UNetTrainer:
 
                 # Update status to WandB
                 print(  
-                        f"[{epoch}/{self.config.data.train.epoch}]",
-                        f"[{train_dataloader.__len__()}/{train_dataloader.__len__()}]",
-                        f"train acc:{epoch_avg_dice:.2f}",
-                        f"test acc:{test_acc:.2f}",
-                        f"epoch time: {epoch_time}",
-                        f"train loss : {epoch_avg_loss}",
-                        f"test loss: {test_loss}"
+                        f"[{epoch+1}/{self.config.data.train.epoch}]",
+                        f"[{train_dataloader.__len__()}/{train_dataloader.__len__()}]\n",
+                        f"train dice:{epoch_avg_dice:.2f}",
+                        f"test dice:{test_acc:.2f} |",
+                        f"epoch time: {epoch_time:.2f} |",
+                        f"train loss : {epoch_avg_loss:.2f}",
+                        f"test loss: {test_loss:.2f}"
                         # end='\r',
                     )
 
@@ -300,11 +312,11 @@ class UNetTrainer:
         epoch_end = time.perf_counter()
         epoch_time = epoch_end - epoch_start
         epoch_avg_loss = sum( losses ) / len( losses )
-        epoch_avg_dice = sum( dices ) / len( dices )
+        epoch_avg_dice = (sum( dices ) / len( dices ))
 
         if self.config.data.wandb.enable:
             wandb.log( {'train loss': epoch_avg_loss}, step=epoch )
-            wandb.log( {'train acc': epoch_avg_dice}, step=epoch )
+            wandb.log( {'train dice': epoch_avg_dice}, step=epoch )
             wandb.log( {'epoch time' : epoch_time}, step=epoch)
 
         return epoch_avg_loss, epoch_avg_dice, epoch_time
@@ -317,11 +329,17 @@ class UNetTrainer:
         dices = []
         loss: Tensor
         dice: Tensor
+
+        sel_input = None
+        sel_masks = None
+        sel_preds = None
+
+        sel_inx = random.randint( 0, dataloader.__len__() - 1 )
     
         self.model.eval()
         start_time = time.perf_counter()
         with torch.no_grad():
-            for _, (input, masks) in enumerate(dataloader):
+            for i, (input, masks) in enumerate(dataloader):
                 input: Tensor = input.to(device)
                 masks: Tensor = masks.to(device)
 
@@ -331,17 +349,37 @@ class UNetTrainer:
                 losses.append( loss.item() )
                 dices.append( dice.item() )
 
-            self.save_images(input, preds, masks, epoch, path=self.seg_path)
+                if i == sel_inx:
+                    sel_input, sel_masks, sel_preds = input, masks, preds
+                    sel_input = sel_input.detach().cpu()
+                    sel_masks = sel_masks.detach().cpu()
+                    sel_preds = sel_preds.detach().cpu()
+
+            image_shape = sel_masks.shape
+            max_label = 0
+            for b in range(image_shape[0]):
+                for l in range(image_shape[1]):
+                    label_size = sel_masks[b][l].sum()
+                    if max_label < label_size:
+                        max_label = l
+
+            self.save_images(
+                sel_input, 
+                sel_preds[0][max_label], 
+                sel_masks[0][max_label], 
+                epoch, 
+                path=self.seg_path
+            )
 
         end_time = time.perf_counter()
         inference_time = end_time - start_time
 
         avg_loss = sum(losses) / len(losses)
-        avg_dice = sum(dices) / len(dices)
+        avg_dice = (sum(dices) / len(dices))
 
         if self.config.data.wandb.enable:
             wandb.log( {'test loss': avg_loss}, step=epoch )
-            wandb.log( {'test acc': avg_dice}, step=epoch )
+            wandb.log( {'test dice': avg_dice}, step=epoch )
             wandb.log( {'inf time': inference_time}, step=epoch)
 
         return avg_loss, avg_dice
