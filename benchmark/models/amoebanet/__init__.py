@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING, Iterator, List, Tuple, Union, cast
 import torch
 from torch import Tensor, nn
 
-from amoebanet.genotype import (NORMAL_CONCAT, NORMAL_OPERATIONS, REDUCTION_CONCAT,
+from .genotype import (NORMAL_CONCAT, NORMAL_OPERATIONS, REDUCTION_CONCAT,
                                 REDUCTION_OPERATIONS)
-from amoebanet.operations import FactorizedReduce
+from .operations import FactorizedReduce
 
 __all__ = ['amoebanetd']
 
@@ -191,4 +191,5 @@ def amoebanetd(num_classes: int = 10,
     # Finally, classifier
     layers['classify'] = Classify(channels_prev, num_classes)
 
+    print("Generated AmoebaNet-D model")
     return nn.Sequential(layers)
