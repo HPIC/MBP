@@ -9,8 +9,6 @@ import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
 from torchvision.datasets.voc import VOCSegmentation
 
-from albumentations import HorizontalFlip, Compose, Resize, Normalize
-
 from typing import Optional
 from PIL import Image
 import os

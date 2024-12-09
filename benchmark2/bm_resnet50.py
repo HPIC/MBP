@@ -4,6 +4,7 @@ import numpy as np
 from contextlib import contextmanager
 
 import torch
+import torch.backends
 import torch.nn as nn
 import torch.optim as optim
 
@@ -27,6 +28,7 @@ def get_arguments():
     # Dataset
     paser.add_argument('--path', type=str, default='./datasets')
     paser.add_argument('--type', type=str, default='flower')
+    paser.add_argument('--seed', type=int, default=42)
     paser.add_argument('--image_size', type=int, default=224)
     paser.add_argument('-b', '--batch_size', type=int, default=16)
     paser.add_argument('--num_class', type=int, default=102)
@@ -76,6 +78,10 @@ class DatasetConfig:
 if __name__ == "__main__":
     args = get_arguments()
 
+    torch.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     dev = torch.device(f"cuda:{args.device}" )
     if args.version == 50:
         model = resnet50(args.num_class)
@@ -88,26 +94,6 @@ if __name__ == "__main__":
             num_filters=190
         )
 
-    trainloader = get_dataloader(
-        DatasetConfig(
-            path=args.path, type=args.type,
-            image_size=args.image_size,
-            batch_size=args.batch_size,
-            num_class=args.num_class,
-            num_workers=args.num_workers,
-            is_train=True,
-        )
-    )
-    validloader = get_dataloader(
-        DatasetConfig(
-            path=args.path, type=args.type,
-            image_size=args.image_size,
-            batch_size=16,
-            num_class=args.num_class,
-            num_workers=args.num_workers,
-            is_train=False,
-        )
-    )
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(
         model.parameters(),
@@ -117,31 +103,38 @@ if __name__ == "__main__":
     )
 
     model = model.to(dev)
-    if args.method == "dp":
-        available_device = [0, 1]
-        model = nn.DataParallel(model, device_ids=available_device)
-    elif args.method == "mbp":
-        model = MBP.hard(
-            model=model, 
-            loss_fn=criterion, 
-            dataloader=trainloader,
-            optimizer=optimizer,
-            micro_batch_size=args.micro_batch
+
+    avg_runtime = []
+    if args.method == "mbp" or args.method == "mbp+dp":
+        trainloader = get_dataloader(
+            DatasetConfig(
+                path=args.path, type=args.type,
+                image_size=args.image_size,
+                batch_size=args.batch_size,
+                num_class=args.num_class,
+                num_workers=args.num_workers,
+                is_train=True,
+            )
         )
-    elif args.method == "mbp+dp":
-        available_device = [0, 1]
+        validloader = get_dataloader(
+            DatasetConfig(
+                path=args.path, type=args.type,
+                image_size=args.image_size,
+                batch_size=16,
+                num_class=args.num_class,
+                num_workers=args.num_workers,
+                is_train=False,
+            )
+        )
         model = MBP.hard(
             model=model, 
             loss_fn=criterion, 
             dataloader=trainloader,
             optimizer=optimizer,
             micro_batch_size=args.micro_batch,
-            dp=True,
-            device_ids=available_device
+            dp=True if args.method == "mbp+dp" else False,
+            device_ids=[0, 1] if args.method == "mbp+dp" else None
         )
-
-    avg_runtime = []
-    if args.method == "mbp" or args.method == "mbp+dp":
         for epoch in range(args.epochs):
             with measure_time("MBP", avg_runtime):
                 losses, avg_loss = model.train()
@@ -159,7 +152,86 @@ if __name__ == "__main__":
                 acc = 100 * (correct_top1 / total)
             print(f"[{epoch+1}/{args.epochs}] Loss: {avg_loss:.4f}, Acc: {acc:.2f}(%)")
         print(f"Runtime: {np.mean(avg_runtime[1:]):.1f} ({np.std(avg_runtime[1:]):.2f}) (sec)")
-    else:
+    elif args.method == "default_" or args.method == "default_+dp":
+        trainloader = get_dataloader(
+            DatasetConfig(
+                path=args.path, type=args.type,
+                image_size=args.image_size,
+                batch_size=args.micro_batch,
+                num_class=args.num_class,
+                num_workers=args.num_workers,
+                is_train=True,
+            )
+        )
+        validloader = get_dataloader(
+            DatasetConfig(
+                path=args.path, type=args.type,
+                image_size=args.image_size,
+                batch_size=16,
+                num_class=args.num_class,
+                num_workers=args.num_workers,
+                is_train=False,
+            )
+        )
+
+        for epoch in range(args.epochs):
+            avg_loss = []
+            batch_size = 0
+            with measure_time(args.method, avg_runtime):
+                for i, (input, target) in enumerate(trainloader):
+                    input, target = input.to(dev), target.to(dev)
+
+                    output = model(input)
+                    loss = criterion(output, target)
+                    loss.backward()
+
+                    if batch_size >= args.batch_size:
+                        optimizer.step()
+                        optimizer.zero_grad()
+                        batch_size = 0
+                    else:
+                        batch_size += input.size(0)
+                        avg_loss.append(loss.item())
+            avg_loss = np.mean(avg_loss)
+
+            with torch.no_grad():
+                total = 0
+                correct_top1 = 0
+                for _, (input, target) in enumerate(validloader):
+                    input, target = input.to(dev), target.to(dev)
+                    output = model(input)
+                    # rank 1
+                    _, pred = torch.max(output, 1)
+                    total += target.size(0)
+                    correct_top1 += (pred == target).sum().item()
+                acc = 100 * (correct_top1 / total)
+            print(f"[{epoch+1}/{args.epochs}] Loss: {avg_loss:.4f}, Acc: {acc:.2f}(%)")
+        print(f"Runtime: {np.mean(avg_runtime[1:]):.1f} ({np.std(avg_runtime[1:]):.2f}) (sec)")
+    else: # default
+        if args.method == "dp":
+            model = nn.DataParallel(model, device_ids=[0, 1])
+
+        trainloader = get_dataloader(
+            DatasetConfig(
+                path=args.path, type=args.type,
+                image_size=args.image_size,
+                batch_size=args.batch_size,
+                num_class=args.num_class,
+                num_workers=args.num_workers,
+                is_train=True,
+            )
+        )
+        validloader = get_dataloader(
+            DatasetConfig(
+                path=args.path, type=args.type,
+                image_size=args.image_size,
+                batch_size=16,
+                num_class=args.num_class,
+                num_workers=args.num_workers,
+                is_train=False,
+            )
+        )
+
         for epoch in range(args.epochs):
             optimizer.zero_grad()
             avg_loss = []
