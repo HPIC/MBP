@@ -675,30 +675,8 @@ tags
 # End of https://www.toptal.com/developers/gitignore/api/linux,macos,python,pycharm,visualstudiocode,tex,emacs,vim
 
 # HPIC custom
-
-## benchmark datasets
-benchmark/*/dataset/*
-benchmark/*/loss/*.json
-benchmark/*/parameters/*
-benchmark/*/result/*
-benchmark/*/results/*
-
 **/*.json
-
-## benchmark partial result
-benchmark/loss/
-benchmark/parameters/
-benchmark/result/
-benchmark/test.py
-
-# 
-examples/MNIST
-*.csv
-benchmark/*/runs
-benchmark/*/checkpoint
-benchmark/*/runs-mbs
-benchmark/*/runs-naive
-
+**/*.csv
 **/*.sh
-**/wandb/*
-benchmark2/results/*.txt
+**/*.txt
+**/*.log
