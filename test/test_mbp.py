@@ -53,7 +53,7 @@ if __name__ == "__main__":
     dev = torch.device(f"cuda:{args.device}")
     model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
     model = (
-        nn.DataParallel(model, output_device=dev) if args.dp else model
+        nn.DataParallel(model) if args.dp else model
     )  # TODO: Check if this is correct
     model.to(dev)
 
@@ -65,11 +65,9 @@ if __name__ == "__main__":
         weight_decay=args.weight_decay,
     )
 
-    # Define train function with mbp.autobackward()
-    @mbp.autobackward(
-        ["input", "target"], micro_batch_size=args.micro_batch, device_=dev
-    )
+    @mbp.apply(["input", "target"], args.micro_batch)
     def train_fn(model, criterion, input, target):
+        print(input.shape, target.shape)
         output = model(input)
         loss = criterion(output, target)
         return loss
@@ -83,6 +81,7 @@ if __name__ == "__main__":
                 ), torch.randint(0, args.num_class, (args.batch_size,))
                 optimizer.zero_grad()
                 loss = train_fn(model, criterion, input=input, target=target)
+                print()
                 optimizer.step()
     else:
         with measure_time(args.method, avg_runtime):

@@ -20,7 +20,7 @@ $ pip install git+https://github.com/HPIC/MBP.git
 ```python
 import mbp
 
-@mbp.autobackward(["x", "label"], micro_batch_size=16) # Condition-1
+@mbp.apply(["x", "label"], 16) # Condition-1
 def train_fn(model, criterion, x, label, *args, **kwargs):
     o = model(x)
     loss = criterion(o, label)
@@ -33,7 +33,7 @@ for image, label in dataloader:
 ```
 You can easily apply MBP to your DL training by following three conditions:
 
-1. **Specify Tensor Names and Micro-Batch Size**: Use the `@mbp.autobackward` decorator to specify the tensor names to be split and the desired micro-batch size.
+1. **Specify Tensor Names and Micro-Batch Size**: Use the `@mbp.apply` decorator to specify the tensor names to be split and the desired micro-batch size.
 2. **Return Loss Without Backpropagation**: Ensure the decorated function computes and returns the loss without calling `.backward()`. The MBP decorator will handle the backpropagation automatically.
 3. **Define Tensors Explicitly**: Explicitly define the corresponding tensors in `key=value` format when calling the decorated function to apply MBP. If not specified, MBP will not be applied to those tensors.
 
@@ -44,23 +44,14 @@ You can easily apply MBP to your DL training by following three conditions:
 > loss.backward() # Don't do this!
 > ```
 
-To specify the device for the batch, include the device in the MBP decorator arguments or the function arguments.
-```python
-device = "cuda:0"
-@mbp.autobackward(["x", "label"], micro_batch_size=16, device_=device) # Optional-1 (recommended)
-def train_fn(model, criterion, x, label, *args, **kwargs):
-    ...
-```
-or
-```python
-device = "cuda:0"
-for image, label in dataloader:
-    optimizer.zero_grad()
-    loss = train_fn(model, criterion, x=image, label=label, device_=device) # Optional-2
-    optimizer.step()
-```
 > **Caution:** Ensure that the specified device has enough memory to handle the micro-batches and intermediate computations.
 > To apply MBP, ensure that after uploading the model to the GPU memory, there is enough remaining GPU memory capacity to allocate at least one batch size and store intermediate computations computed by each layer of the model.
+
+MBP automatically detects whether the model is allocated to a CPU or GPU. It then splits a large mini-batch into smaller micro-batches and streams them sequentially to the detected device.
+### Arguments
+- `target_batch` (type: List[str] or Tuple[str]): List of tensor names to be applied MBP.
+- `ub_size` (type: int): Micro-batch size.
+- `device` (typ: str | int | Device, optional): Device to use for the micro-batch. (Default: "auto").
 
 ### Multi-GPU
 MBP can be applied not only to single GPU systems but also to multi-GPU systems.
@@ -74,16 +65,11 @@ import mbp
 device = torch.device("cuda")
 model = nn.DataParallel(model).to(device) # Just add PyTorch's DataParallel() code!
 
-@mbp.autobackward(["x", "label"], micro_batch_size=16, device_=device)
+@mbp.apply(["x", "label"], 16)
 def train_fn(model, criterion, x, label, *args, **kwargs):
     o = model(x)
     loss = criterion(o, label)
     return loss
-
-for image, label in dataloader:
-    optimizer.zero_grad()
-    loss = train_fn(model, criterion, x=image, label=label)
-    optimizer.step()
 ```
 
 ## Citation

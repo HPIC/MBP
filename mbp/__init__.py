@@ -1,21 +1,24 @@
 import functools
+import gc
 import math
 import warnings
 from typing import Callable, Dict, List, Tuple
 
+import torch.nn as nn
 from torch import Tensor
 from torch import device as Device
+from torch.nn.modules.loss import _Loss
 
 
-def autobackward(
+def apply(
     target_batch: List[str] | Tuple[str, ...],
-    micro_batch_size: int,
-    device_: str | int | Device = None,
+    ub_size: int,
+    device: str | int | Device = "auto",
 ) -> Callable:
     r"""
     MBP Decorator
     ---
-    The `autobackward()` decorator helps in training models with large batches by splitting them into smaller micro-batches.
+    The `apply()` decorator helps in training models with large batches by splitting them into smaller micro-batches.
     This decorator calculates the loss and performs backpropagation to accumulate gradients without updating model parameters.
 
     Usage:
@@ -27,7 +30,7 @@ def autobackward(
     Example:
         ```python
         >>> import mbp
-        >>> @mbp.autobackward(["x", "label"], micro_batch_size=16) # 1
+        >>> @mbp.apply(["x", "label"], ub_size=16) # 1
         >>> def train_fn(model, criterion, x, label, *args, **kwargs):
         ...     o = model(x)
         ...     loss = criterion(o, label)
@@ -40,45 +43,38 @@ def autobackward(
 
     Args:
         target_batch (List[str]): List of tensor names to be split.
-        micro_batch_size (int): Size of each micro-batch.
-        device_ (str | int | Device, optional): Device to move the micro-batch to. Defaults to None.
+        ub_size (int): Micro-batch size.
+        device (str | int | Device, optional): Device to use for the micro-batch. Defaults to "auto".
 
     Returns:
         loss (float): The loss value.
-
-    ---
-    To specify the device for the batch, include the device in the MBP decorator arguments or the function arguments.
-
-    Example:
-        ```python
-        >>> device = "cuda:0"
-        >>> @mbp.autobackward(["x", "label"], micro_batch_size=16, device_=device) # Optional-1
-        >>> def train_fn(model, criterion, x, label, *args, **kwargs):
-        ...    ...
-        ```
-        or
-        ```python
-        >>> device = "cuda:0"
-        >>> for image, label in dataloader:
-        ...     loss = train_fn(model, criterion, x=image, label=label, device_=device) # Optional-2
-        ```
     """
     assert isinstance(
         target_batch, (list, tuple)
-    ), "target_batch must be a list or tuple."
-    assert isinstance(micro_batch_size, int), "micro_batch_size must be an integer."
-    dev_ = device_ if device_ is not None else "cpu"
+    ), "`target_batch` must be a list or tuple."
+    assert isinstance(
+        ub_size, (int, str)
+    ), "`ub_size` must be an integer or string. (Default: 'auto')"
+    assert isinstance(
+        device, (str, int, Device)
+    ), "`device` must be a string, integer, or torch.device. (Default: 'auto')"
+    if device == "auto":
+        dev_ = device
+    else:
+        if isinstance(device, str):
+            dev_ = Device(device)
+        elif isinstance(device, int):
+            dev_ = Device(f"cuda:{device}")
+        else:
+            dev_ = device
 
     def decorate(func: Callable):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            dev = dev_
-            if "device" in kwargs:
-                dev = kwargs["device_"]
-                del kwargs["device_"]
-
+            if not hasattr(wrapper, "dev"):
+                wrapper.dev = _get_model_device() if dev_ == "auto" else dev_
             loss = 0
-            batch_chunker = BatchChunker(target_batch, kwargs, micro_batch_size, dev)
+            batch_chunker = BatchChunker(target_batch, kwargs, ub_size, wrapper.dev)
             if batch_chunker.is_valid:
                 for kwargs in batch_chunker:
                     u_loss: Tensor = func(*args, **kwargs)
@@ -97,12 +93,22 @@ def autobackward(
     return decorate
 
 
-def _chunk(batch: Tensor, micro_batch_size: int) -> Tuple[Tuple[Tensor, ...], int]:
-    chunk_size = (
-        math.ceil(batch.shape[0] / micro_batch_size)
-        if batch.shape[0] > micro_batch_size
-        else 1
-    )
+def _get_model_device() -> Device:
+    model = None
+    while model is None:
+        for obj in gc.get_objects():
+            if (
+                isinstance(obj, nn.Module)
+                and hasattr(obj, "parameters")
+                and not isinstance(obj, _Loss)
+            ):
+                model = obj
+                break
+    return next(model.parameters()).device
+
+
+def _chunk(batch: Tensor, ub_size: int) -> Tuple[Tuple[Tensor, ...], int]:
+    chunk_size = math.ceil(batch.shape[0] / ub_size) if batch.shape[0] > ub_size else 1
     return batch.chunk(chunk_size), chunk_size
 
 
@@ -111,23 +117,20 @@ class BatchChunker:
         self,
         target_batch: List[str] | Tuple[str, ...],
         kwargs: Dict[str, Tensor],
-        micro_batch_size: int,
-        device: str | int | Device,
+        ub_size: int,
+        device: Device,
     ):
-        self._chunked = {}
+        m_batch = {k: kwargs[k] for k in target_batch if k in kwargs}
         _size = 1
-        for k in target_batch:
-            if k in kwargs:
-                self._chunked[k], _size = _chunk(kwargs[k], micro_batch_size)
+        _chunked = {}
+        for k, mb in m_batch.items():
+            _chunked[k], _size = _chunk(mb, ub_size)
+
+        self._chunked = _chunked
         self._stop_index = _size
         self._curr_index = 0
         self.kwargs = kwargs
-        if isinstance(device, str):
-            self.device = Device(device)
-        elif isinstance(device, int):
-            self.device = Device(f"cuda:{device}")
-        else:
-            self.device = device
+        self.device = device
 
     def __len__(self):
         return self._stop_index
@@ -152,3 +155,6 @@ class BatchChunker:
     @property
     def is_valid(self):
         return len(self._chunked) > 0
+
+
+__all__ = ["apply"]
