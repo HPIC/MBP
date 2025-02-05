@@ -36,10 +36,6 @@ setup(
     name="mbp-pytorch",
     version="0.2.2",
     packages=find_packages(),
-    install_requires=[
-        "numpy",
-        "scipy",
-    ],
     author="XinYu Piao",
     author_email="xypiao97@korea.ac.kr",
     description="A deep learning package that requires GPU-enabled PyTorch.",
