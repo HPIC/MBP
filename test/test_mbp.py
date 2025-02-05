@@ -67,7 +67,7 @@ if __name__ == "__main__":
 
     @mbp.apply(["input", "target"], args.micro_batch)
     def train_fn(model, criterion, input, target):
-        print(input.shape, target.shape)
+        print(f"input: {input.shape}, target: {target.shape}")
         output = model(input)
         loss = criterion(output, target)
         return loss

@@ -1,5 +1,6 @@
 import functools
 import gc
+import logging
 import math
 import warnings
 from typing import Callable, Dict, List, Tuple
@@ -72,9 +73,13 @@ def apply(
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             if not hasattr(wrapper, "dev"):
-                wrapper.dev = _get_model_device() if dev_ == "auto" else dev_
+                wrapper.dev, wrapper.num_device = (
+                    _get_model_device() if dev_ == "auto" else dev_
+                )
             loss = 0
-            batch_chunker = BatchChunker(target_batch, kwargs, ub_size, wrapper.dev)
+            batch_chunker = BatchChunker(
+                target_batch, kwargs, ub_size, wrapper.dev, wrapper.num_device
+            )
             if batch_chunker.is_valid:
                 for kwargs in batch_chunker:
                     u_loss: Tensor = func(*args, **kwargs)
@@ -95,6 +100,7 @@ def apply(
 
 def _get_model_device() -> Device:
     model = None
+    num_device = 1
     while model is None:
         for obj in gc.get_objects():
             if (
@@ -104,11 +110,17 @@ def _get_model_device() -> Device:
             ):
                 model = obj
                 break
-    return next(model.parameters()).device
+    if isinstance(model, nn.DataParallel):
+        logging.info("DataParallel model detected.")
+        num_device = len(model.device_ids)
+    return next(model.parameters()).device, num_device
 
 
-def _chunk(batch: Tensor, ub_size: int) -> Tuple[Tuple[Tensor, ...], int]:
+def _chunk(
+    batch: Tensor, ub_size: int, num_device: int
+) -> Tuple[Tuple[Tensor, ...], int]:
     chunk_size = math.ceil(batch.shape[0] / ub_size) if batch.shape[0] > ub_size else 1
+    chunk_size = math.ceil(chunk_size / num_device) if num_device > 1 else chunk_size
     return batch.chunk(chunk_size), chunk_size
 
 
@@ -119,12 +131,13 @@ class BatchChunker:
         kwargs: Dict[str, Tensor],
         ub_size: int,
         device: Device,
+        num_device: int,
     ):
         m_batch = {k: kwargs[k] for k in target_batch if k in kwargs}
         _size = 1
         _chunked = {}
         for k, mb in m_batch.items():
-            _chunked[k], _size = _chunk(mb, ub_size)
+            _chunked[k], _size = _chunk(mb, ub_size, num_device)
 
         self._chunked = _chunked
         self._stop_index = _size

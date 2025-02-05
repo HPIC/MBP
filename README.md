@@ -50,7 +50,7 @@ You can easily apply MBP to your DL training by following three conditions:
 MBP automatically detects whether the model is allocated to a CPU or GPU. It then splits a large mini-batch into smaller micro-batches and streams them sequentially to the detected device.
 ### Arguments
 - `target_batch` (type: List[str] or Tuple[str]): List of tensor names to be applied MBP.
-- `ub_size` (type: int): Micro-batch size.
+- `ub_size` (type: int): The maximum size of a micro-batch. This value represents the maximum size of a micro-batch that can be executed on each device, and the batch size split by MBP or other functions cannot exceed this value.
 - `device` (typ: str | int | Device, optional): Device to use for the micro-batch. (Default: "auto").
 
 ### Multi-GPU
