@@ -81,6 +81,7 @@ if __name__ == "__main__":
                 ), torch.randint(0, args.num_class, (args.batch_size,))
                 optimizer.zero_grad()
                 loss = train_fn(model, criterion, input=input, target=target)
+                print(loss)
                 print()
                 optimizer.step()
     else:
@@ -93,4 +94,6 @@ if __name__ == "__main__":
                 output = model(input)
                 loss = criterion(output, target)
                 loss.backward()
+                print(loss.detach().item())
+                print()
                 optimizer.step()
