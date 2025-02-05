@@ -2,26 +2,43 @@ import sys
 
 from setuptools import find_packages, setup
 
-try:
-    import torch
+REQUIRED_PYTHON_VERSION = (3, 10)
 
-    if not torch.cuda.is_available():
-        print("Error: PyTorch is installed but CUDA is not available.")
+
+def check_python_version():
+    if sys.version_info < REQUIRED_PYTHON_VERSION:
+        print(
+            "Error: This package requires Python {} or higher.".format(
+                ".".join(map(str, REQUIRED_PYTHON_VERSION))
+            )
+        )
         sys.exit(1)
-except ImportError:
-    print("Error: PyTorch is not installed. Install it manually using:")
-    print("pip install torch torchvision torchaudio")
-    sys.exit(1)
+
+
+def check_pytorch_cuda():
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            print("Error: PyTorch is installed but CUDA is not available.")
+            sys.exit(1)
+    except ImportError:
+        print("Error: PyTorch is not installed. Install it manually using:")
+        print("pip install torch torchvision torchaudio")
+        sys.exit(1)
+
+
+check_python_version()
+check_pytorch_cuda()
+
 
 setup(
     name="mbp-pytorch",
-    version="0.2.1",
+    version="0.2.2",
     packages=find_packages(),
     install_requires=[
         "numpy",
         "scipy",
-        "torchvision",
-        "torchaudio",
     ],
     author="XinYu Piao",
     author_email="xypiao97@korea.ac.kr",
@@ -36,5 +53,5 @@ setup(
         "Operating System :: Microsoft :: Windows",
     ],
     python_requires=">=3.10",
-    include_package_data=True,  # LICENSE 포함 가능
+    include_package_data=True,
 )
