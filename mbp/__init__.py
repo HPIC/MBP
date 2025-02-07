@@ -88,9 +88,17 @@ def apply(
                     out = func(*args, **kwargs)
                     if isinstance(out, tuple):
                         u_loss, *others_ = out
+                        assert isinstance(
+                            u_loss, Tensor
+                        ), "The first return value must be a loss tensor."
+                        assert u_loss.dim() == 0, "The loss tensor must be a scalar."
                         others = _store_others(others_, out=others)
                     else:
                         u_loss = out
+                        assert isinstance(
+                            u_loss, Tensor
+                        ), "The first return value must be a loss tensor."
+                        assert u_loss.dim() == 0, "The loss tensor must be a scalar."
                     u_loss /= batch_chunker.chunk_size
                     u_loss.backward()
                     loss += u_loss.detach().item()

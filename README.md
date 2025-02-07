@@ -20,7 +20,7 @@ import mbp
 @mbp.apply(["x", "label"], 16) # Condition-1
 def train_fn(model, criterion, x, label, *args, **kwargs):
     output = model(x)
-    loss = criterion(o, label)
+    loss = criterion(output, label)
     return loss, output, ... # Condition-2
 
 for image, label in dataloader:
@@ -34,7 +34,7 @@ You can easily apply MBP to your DL training by following three conditions:
 2. **Return Loss Without Backpropagation**: Ensure the decorated function computes and returns the loss without calling `.backward()`. The MBP decorator will handle the backpropagation automatically. Also, make sure that the loss value is the first item returned by the function decorated with the MBP decorator.
 3. **Define Tensors Explicitly**: Explicitly define the corresponding tensors in `key=value` format when calling the decorated function to apply MBP. If not specified, MBP will not be applied to those tensors.
 
-> **Caution:**
+> ⚠️ **Caution:**
 > The function decorated with the MBP decorator returns the loss value for verification purposes only. Do not call `.backward()` on this loss value, as the MBP decorator will handle the backpropagation automatically. See the example below:
 > ```python
 > loss = train_fn(model, criterion, x=image, label=label)
@@ -43,7 +43,7 @@ You can easily apply MBP to your DL training by following three conditions:
 
 MBP automatically detects whether the model is allocated to a CPU or GPU. It then splits a large mini-batch into smaller micro-batches and streams them sequentially to the detected device.
 
-> **Caution:** Ensure that the specified device has enough memory to hold the micro-batches and intermediate computations. To apply MBP, ensure that after uploading the model to the GPU memory, there is enough remaining GPU memory capacity to allocate at least one micro-batch size and store intermediate computations computed by each layer of the model.
+> ⚠️ **Caution:** Ensure that the specified device has enough memory to hold the micro-batches and intermediate computations. To apply MBP, ensure that after uploading the model to the GPU memory, there is enough remaining GPU memory capacity to allocate at least one micro-batch size and store intermediate computations computed by each layer of the model.
 
 ### Arguments
 - `target_batch` (type: List[str] or Tuple[str]): List of tensor names to be applied MBP.
@@ -64,12 +64,13 @@ model = nn.DataParallel(model).to(device)
 # No additional arguments or code modifications are necessary.
 @mbp.apply(["x", "label"], 16)
 def train_fn(model, criterion, x, label, *args, **kwargs):
-    o = model(x)
-    loss = criterion(o, label)
+    output = model(x)
+    loss = criterion(output, label)
     return loss
 ```
 
 ## Citation
+If you use this GitHub repository or pip package in your research, please cite the following paper:
 ```bibtex
 @article{piao2023enabling,
     title={Enabling large batch size training for DNN models beyond the memory limit while maintaining performance},
