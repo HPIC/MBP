@@ -3,8 +3,9 @@ import gc
 import logging
 import math
 import warnings
-from typing import Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
+import torch
 import torch.nn as nn
 from torch import Tensor
 from torch import device as Device
@@ -81,11 +82,20 @@ def apply(
                 target_batch, kwargs, ub_size, wrapper.dev, wrapper.num_device
             )
             if batch_chunker.is_valid:
+                u_loss: Tensor
+                others: List[Any] = []
                 for kwargs in batch_chunker:
-                    u_loss: Tensor = func(*args, **kwargs)
+                    out = func(*args, **kwargs)
+                    if isinstance(out, tuple):
+                        u_loss, *others_ = out
+                        others = _store_others(others_, out=others)
+                    else:
+                        u_loss = out
                     u_loss /= batch_chunker.chunk_size
                     u_loss.backward()
                     loss += u_loss.detach().item()
+                if len(others) > 0:
+                    return loss, *_gather_others(others)
                 return loss
             else:
                 warnings.warn(
@@ -96,6 +106,28 @@ def apply(
         return wrapper
 
     return decorate
+
+
+def _store_others(others: Tuple[Any], out: List[List[Any]]) -> List[Any]:
+    if len(out) == 0:
+        out = [[o] for o in others]
+    else:
+        for i, o in enumerate(others):
+            out[i].append(o)
+    return out
+
+
+def _gather_others(others: List[Any]) -> List[Any]:
+    for i, o in enumerate(others):
+        if len(o) == 1:
+            others[i] = o[0]
+        else:
+            if isinstance(o[0], Tensor):
+                # Only for tensors to concatenate
+                others[i] = torch.cat(o)
+            else:
+                others[i] = o
+    return others
 
 
 def _get_model_device() -> Device:

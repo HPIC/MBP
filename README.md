@@ -19,19 +19,19 @@ import mbp
 
 @mbp.apply(["x", "label"], 16) # Condition-1
 def train_fn(model, criterion, x, label, *args, **kwargs):
-    o = model(x)
+    output = model(x)
     loss = criterion(o, label)
-    return loss # Condition-2
+    return loss, output, ... # Condition-2
 
 for image, label in dataloader:
     optimizer.zero_grad()
-    loss = train_fn(model, criterion, x=image, label=label) # Condition-3
+    loss, output, ... = train_fn(model, criterion, x=image, label=label) # Condition-3
     optimizer.step()
 ```
 You can easily apply MBP to your DL training by following three conditions:
 
 1. **Specify Tensor Names and Micro-Batch Size**: Use the `@mbp.apply` decorator to specify the tensor names to be split and the desired micro-batch size.
-2. **Return Loss Without Backpropagation**: Ensure the decorated function computes and returns the loss without calling `.backward()`. The MBP decorator will handle the backpropagation automatically.
+2. **Return Loss Without Backpropagation**: Ensure the decorated function computes and returns the loss without calling `.backward()`. The MBP decorator will handle the backpropagation automatically. Also, make sure that the loss value is the first item returned by the function decorated with the MBP decorator.
 3. **Define Tensors Explicitly**: Explicitly define the corresponding tensors in `key=value` format when calling the decorated function to apply MBP. If not specified, MBP will not be applied to those tensors.
 
 > **Caution:**

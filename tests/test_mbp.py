@@ -67,10 +67,9 @@ if __name__ == "__main__":
 
     @mbp.apply(["input", "target"], args.micro_batch)
     def train_fn(model, criterion, input, target):
-        print(f"input: {input.shape}, target: {target.shape}")
         output = model(input)
         loss = criterion(output, target)
-        return loss
+        return loss, output, output.shape[0]
 
     avg_runtime = []
     if args.method == "mbp":
@@ -80,9 +79,10 @@ if __name__ == "__main__":
                     args.batch_size, 3, args.image_size, args.image_size
                 ), torch.randint(0, args.num_class, (args.batch_size,))
                 optimizer.zero_grad()
-                loss = train_fn(model, criterion, input=input, target=target)
-                print(loss)
-                print()
+                loss, output, num = train_fn(
+                    model, criterion, input=input, target=target
+                )
+                print(loss, output.shape, num)
                 optimizer.step()
     else:
         with measure_time(args.method, avg_runtime):
@@ -95,5 +95,4 @@ if __name__ == "__main__":
                 loss = criterion(output, target)
                 loss.backward()
                 print(loss.detach().item())
-                print()
                 optimizer.step()
