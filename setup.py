@@ -34,11 +34,11 @@ check_pytorch_cuda()
 
 setup(
     name="mbp-pytorch",
-    version="0.2.3",
+    version="0.3.0",
     packages=find_packages(),
     author="XinYu Piao",
     author_email="xypiao97@korea.ac.kr",
-    description="A deep learning package that requires GPU-enabled PyTorch.",
+    description="Enabling large batch size training for DNN models beyond the memory limit",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/HPIC/MBP.git",

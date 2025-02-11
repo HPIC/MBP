@@ -11,6 +11,8 @@ from torch import Tensor
 from torch import device as Device
 from torch.nn.modules.loss import _Loss
 
+from ._pipeline import apply_pipeline
+
 
 def apply(
     batch_names: List[str] | Tuple[str, ...],
@@ -216,5 +218,5 @@ class BatchChunker:
         return len(self._chunked) > 0
 
 
-__all__ = ["apply"]
-__version__ = "0.2.3"
+__all__ = ["apply", apply_pipeline]
+__version__ = "0.3.0"
