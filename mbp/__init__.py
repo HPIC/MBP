@@ -45,9 +45,10 @@ def apply(
         ```
 
     Args:
-        batch_names (List[str]): List of tensor names to be split.
+        batch_names (List[str] | Tuple[str]): List of batch names to be split.
         ub_size (int): Micro-batch size. Defaults to 1.
-        device (str | int | Device, optional): Device to use for the micro-batch. Defaults to "cpu".
+        device (str | int | Device, optional): Device to which the micro-batches will be sent. Defaults to "cpu".
+        device_ids (List[int] | Tuple[int]): List of GPU IDs for multi-GPU training. Defualts to None.
 
     Returns:
         loss (float): The loss value.
@@ -216,4 +217,4 @@ class BatchChunker:
 
 
 __all__ = ["apply"]
-__version__ = "0.2.2"
+__version__ = "0.2.3"

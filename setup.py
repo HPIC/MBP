@@ -34,7 +34,7 @@ check_pytorch_cuda()
 
 setup(
     name="mbp-pytorch",
-    version="0.2.2",
+    version="0.2.3",
     packages=find_packages(),
     author="XinYu Piao",
     author_email="xypiao97@korea.ac.kr",
