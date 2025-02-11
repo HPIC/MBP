@@ -13,9 +13,10 @@ from torch.nn.modules.loss import _Loss
 
 
 def apply(
-    target_batch: List[str] | Tuple[str, ...],
-    ub_size: int,
-    device: str | int | Device = "auto",
+    batch_names: List[str] | Tuple[str, ...],
+    ub_size: int = 1,
+    device: str | int | Device = "cpu",
+    device_ids: List[int] | Tuple[int, ...] | None = None,
 ) -> Callable:
     r"""
     MBP Decorator
@@ -44,42 +45,44 @@ def apply(
         ```
 
     Args:
-        target_batch (List[str]): List of tensor names to be split.
-        ub_size (int): Micro-batch size.
-        device (str | int | Device, optional): Device to use for the micro-batch. Defaults to "auto".
+        batch_names (List[str]): List of tensor names to be split.
+        ub_size (int): Micro-batch size. Defaults to 1.
+        device (str | int | Device, optional): Device to use for the micro-batch. Defaults to "cpu".
 
     Returns:
         loss (float): The loss value.
     """
     assert isinstance(
-        target_batch, (list, tuple)
-    ), "`target_batch` must be a list or tuple."
+        batch_names, (list, tuple)
+    ), "`batch_names` must be a list or tuple."
     assert isinstance(
-        ub_size, (int, str)
-    ), "`ub_size` must be an integer or string. (Default: 'auto')"
+        ub_size, int
+    ), "`ub_size` must be an integer or string. (Default: 1)"
     assert isinstance(
         device, (str, int, Device)
-    ), "`device` must be a string, integer, or torch.device. (Default: 'auto')"
-    if device == "auto":
-        dev_ = device
+    ), "`device` must be a string, integer, or torch.device. (Default: 'cpu')"
+    if isinstance(device, str):
+        dev_ = Device(device)
+    elif isinstance(device, int):
+        dev_ = Device(f"cuda:{device}")
     else:
-        if isinstance(device, str):
-            dev_ = Device(device)
-        elif isinstance(device, int):
-            dev_ = Device(f"cuda:{device}")
-        else:
-            dev_ = device
+        dev_ = device
+    if device_ids is not None:
+        assert isinstance(
+            device_ids, (list, tuple)
+        ), "`device_ids` must be a list or tuple. (Default: 'None')"
+        device_ids_ = len(device_ids)
+    else:
+        device_ids_ = 1
 
     def decorate(func: Callable):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             if not hasattr(wrapper, "dev"):
-                wrapper.dev, wrapper.num_device = (
-                    _get_model_device() if dev_ == "auto" else dev_
-                )
+                wrapper.dev, wrapper.num_device = dev_, device_ids_
             loss = 0
             batch_chunker = BatchChunker(
-                target_batch, kwargs, ub_size, wrapper.dev, wrapper.num_device
+                batch_names, kwargs, ub_size, wrapper.dev, wrapper.num_device
             )
             if batch_chunker.is_valid:
                 u_loss: Tensor
@@ -138,7 +141,7 @@ def _gather_others(others: List[Any]) -> List[Any]:
     return others
 
 
-def _get_model_device() -> Device:
+def _get_model_device() -> Tuple[Device, int]:
     model = None
     num_device = 1
     while model is None:
@@ -153,7 +156,9 @@ def _get_model_device() -> Device:
     if isinstance(model, nn.DataParallel):
         logging.info("DataParallel model detected.")
         num_device = len(model.device_ids)
-    return next(model.parameters()).device, num_device
+    assert isinstance(model, nn.Module), "No model found."
+    device = next(model.parameters()).device
+    return device, num_device
 
 
 def _chunk(
@@ -167,13 +172,13 @@ def _chunk(
 class BatchChunker:
     def __init__(
         self,
-        target_batch: List[str] | Tuple[str, ...],
+        batch_names: List[str] | Tuple[str, ...],
         kwargs: Dict[str, Tensor],
         ub_size: int,
         device: Device,
         num_device: int,
     ):
-        m_batch = {k: kwargs[k] for k in target_batch if k in kwargs}
+        m_batch = {k: kwargs[k] for k in batch_names if k in kwargs}
         _size = 1
         _chunked = {}
         for k, mb in m_batch.items():

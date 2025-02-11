@@ -680,3 +680,4 @@ tags
 **/*.sh
 **/*.txt
 **/*.log
+**/data/
