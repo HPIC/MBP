@@ -681,3 +681,5 @@ tags
 **/*.txt
 **/*.log
 **/data/
+.pre-commit-config.yaml
+.flake8
