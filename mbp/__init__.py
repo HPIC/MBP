@@ -216,3 +216,4 @@ class BatchChunker:
 
 
 __all__ = ["apply"]
+__version__ = "0.2.2"
