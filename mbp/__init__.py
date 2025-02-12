@@ -1,16 +1,13 @@
 import functools
-import gc
-import logging
 import math
 import warnings
 from typing import Any, Callable, Dict, List, Tuple
 
 import torch
-import torch.nn as nn
 from torch import Tensor
 from torch import device as Device
-from torch.nn.modules.loss import _Loss
 
+from ._log import runtime_
 from ._pipeline import apply_pipeline
 
 
@@ -91,23 +88,9 @@ def apply(
                 u_loss: Tensor
                 others: List[Any] = []
                 for kwargs in batch_chunker:
-                    out = func(*args, **kwargs)
-                    if isinstance(out, tuple):
-                        u_loss, *others_ = out
-                        assert isinstance(
-                            u_loss, Tensor
-                        ), "The first return value must be a loss tensor."
-                        assert u_loss.dim() == 0, "The loss tensor must be a scalar."
-                        others = _store_others(others_, out=others)
-                    else:
-                        u_loss = out
-                        assert isinstance(
-                            u_loss, Tensor
-                        ), "The first return value must be a loss tensor."
-                        assert u_loss.dim() == 0, "The loss tensor must be a scalar."
-                    u_loss /= batch_chunker.chunk_size
-                    u_loss.backward()
-                    loss += u_loss.detach().item()
+                    out = _forward(func, args, kwargs)
+                    u_loss, others = _parse_out(out, others)
+                    loss += _backward(u_loss, batch_chunker.chunk_size)
                 if len(others) > 0:
                     return loss, *_gather_others(others)
                 return loss
@@ -122,6 +105,40 @@ def apply(
     return decorate
 
 
+@runtime_
+def _forward(func: Callable, args, kwargs) -> Any:
+    return func(*args, **kwargs)
+
+
+@runtime_
+def _backward(u_loss: Tensor, chunk_size: int) -> Tensor:
+    u_loss /= chunk_size
+    u_loss.backward()
+    return u_loss
+
+
+@runtime_
+def _parse_out(
+    out: Any, others_list: List[List[Any]]
+) -> Tuple[Tensor, List[List[Any]]]:
+    if isinstance(out, tuple):
+        u_loss, *others = out
+        assert isinstance(
+            u_loss, Tensor
+        ), "The first return value must be a loss tensor."
+        assert u_loss.dim() == 0, "The loss tensor must be a scalar."
+        others_list = _store_others(others, out=others_list)
+        return u_loss, others_list
+    else:
+        u_loss = out
+        assert isinstance(
+            u_loss, Tensor
+        ), "The first return value must be a loss tensor."
+        assert u_loss.dim() == 0, "The loss tensor must be a scalar."
+        return u_loss, others_list
+
+
+@runtime_
 def _store_others(others: Tuple[Any], out: List[List[Any]]) -> List[Any]:
     if len(out) == 0:
         out = [[o] for o in others]
@@ -131,6 +148,7 @@ def _store_others(others: Tuple[Any], out: List[List[Any]]) -> List[Any]:
     return out
 
 
+@runtime_
 def _gather_others(others: List[Any]) -> List[Any]:
     for i, o in enumerate(others):
         if len(o) == 1:
@@ -144,34 +162,6 @@ def _gather_others(others: List[Any]) -> List[Any]:
     return others
 
 
-def _get_model_device() -> Tuple[Device, int]:
-    model = None
-    num_device = 1
-    while model is None:
-        for obj in gc.get_objects():
-            if (
-                isinstance(obj, nn.Module)
-                and hasattr(obj, "parameters")
-                and not isinstance(obj, _Loss)
-            ):
-                model = obj
-                break
-    if isinstance(model, nn.DataParallel):
-        logging.info("DataParallel model detected.")
-        num_device = len(model.device_ids)
-    assert isinstance(model, nn.Module), "No model found."
-    device = next(model.parameters()).device
-    return device, num_device
-
-
-def _chunk(
-    batch: Tensor, ub_size: int, num_device: int
-) -> Tuple[Tuple[Tensor, ...], int]:
-    chunk_size = math.ceil(batch.shape[0] / ub_size) if batch.shape[0] > ub_size else 1
-    chunk_size = math.ceil(chunk_size / num_device) if num_device > 1 else chunk_size
-    return batch.chunk(chunk_size), chunk_size
-
-
 class BatchChunker:
     def __init__(
         self,
@@ -181,17 +171,24 @@ class BatchChunker:
         device: Device,
         num_device: int,
     ):
-        m_batch = {k: kwargs[k] for k in batch_names if k in kwargs}
-        _size = 1
-        _chunked = {}
-        for k, mb in m_batch.items():
-            _chunked[k], _size = _chunk(mb, ub_size, num_device)
+        for n in batch_names:
+            assert n in kwargs, f"Missing tensor: {n}"
+        mb_size = kwargs[batch_names[0]].shape[0]
+        chunk_size = math.ceil(mb_size / ub_size) if mb_size > ub_size else 1
+        chunk_size = (
+            math.ceil(chunk_size / num_device) if num_device > 1 else chunk_size
+        )
 
-        self._chunked = _chunked
-        self._stop_index = _size
+        self._stop_index = chunk_size
         self._curr_index = 0
         self.kwargs = kwargs
         self.device = device
+
+        m_batch = {k: kwargs[k] for k in batch_names if k in kwargs}
+        self.chunked_batch: Dict[str, Tensor | Tuple[Tensor, ...]] = {}
+        for k, mb in m_batch.items():
+            self.chunked_batch[k] = mb.chunk(chunk_size)
+            self.kwargs[k] = None
 
     def __len__(self):
         return self._stop_index
@@ -199,11 +196,12 @@ class BatchChunker:
     def __iter__(self):
         return self
 
+    @runtime_
     def __next__(self):
         if self._curr_index < self._stop_index:
             self._curr_index += 1
-            for k, ub in self._chunked.items():
-                self.kwargs[k] = ub[self._curr_index - 1].to(self.device)
+            for n, ub in self.chunked_batch.items():
+                self.kwargs[n] = ub[self._curr_index - 1].to(self.device)
             return self.kwargs
         else:
             self._curr_index = 0
@@ -215,8 +213,8 @@ class BatchChunker:
 
     @property
     def is_valid(self):
-        return len(self._chunked) > 0
+        return self.chunk_size > 1
 
 
-__all__ = ["apply", apply_pipeline]
+__all__ = [apply, apply_pipeline]
 __version__ = "0.3.0"

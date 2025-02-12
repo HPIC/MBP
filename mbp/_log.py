@@ -1,4 +1,8 @@
+import functools
 import logging
+from contextlib import contextmanager
+from time import perf_counter_ns
+from typing import Callable
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,3 +54,24 @@ def backward_log(txt: str):
     :param color: color
     """
     logging.debug(TextColor.colorize(txt, TextColor.CYAN))
+
+
+@contextmanager
+def runtime(txt: str):
+    start = perf_counter_ns()
+    yield
+    end = perf_counter_ns()
+    logging.info(
+        TextColor.colorize(
+            f"<{txt}> Runtime: {(end-start) * 1e-6:.1f} ms", TextColor.MAGENTA
+        )
+    )
+
+
+def runtime_(func: Callable):
+    @functools.wraps(func)
+    def _wrapper(*args, **kwargs):
+        with runtime(func.__name__):
+            return func(*args, **kwargs)
+
+    return _wrapper
