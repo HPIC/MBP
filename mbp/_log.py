@@ -38,22 +38,17 @@ class TextColor:
         return f"{color}{text}{TextColor.RESET}"
 
 
-def forward_log(txt: str):
-    """
-    Forward log
+def log_message(txt: str, color: str = TextColor.RESET):
+    r"""
+    Log message
     :param txt: text to log
     :param color: color
-    """
-    logging.debug(TextColor.colorize(txt, TextColor.YELLOW))
 
-
-def backward_log(txt: str):
     """
-    Backward log
-    :param txt: text to log
-    :param color: color
-    """
-    logging.debug(TextColor.colorize(txt, TextColor.CYAN))
+    _color = TextColor.RESET
+    if _color in dir(TextColor):
+        _color = getattr(TextColor, color.upper())
+    logging.debug(TextColor.colorize(txt, _color))
 
 
 @contextmanager
@@ -61,7 +56,7 @@ def runtime(txt: str):
     start = perf_counter_ns()
     yield
     end = perf_counter_ns()
-    logging.info(
+    logging.debug(
         TextColor.colorize(
             f"<{txt}> Runtime: {(end-start) * 1e-6:.1f} ms", TextColor.MAGENTA
         )

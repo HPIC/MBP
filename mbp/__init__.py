@@ -119,7 +119,6 @@ def _backward_ub(ub_loss: Tensor, chunk_size: int) -> Tensor:
     return ub_loss
 
 
-@runtime_
 def _seperate_uloss_and_others(
     out: Any, others_list: List[List[Any]]
 ) -> Tuple[Tensor, List[List[Any]]]:
@@ -143,7 +142,6 @@ def _seperate_uloss_and_others(
         return ub_loss, others_list
 
 
-@runtime_
 def _store_others(others: Tuple[Any], out: List[List[Any]]) -> List[Any]:
     # Store others in a list.
     if len(out) == 0:
@@ -154,7 +152,6 @@ def _store_others(others: Tuple[Any], out: List[List[Any]]) -> List[Any]:
     return out
 
 
-@runtime_
 def _gather_others(others: List[Any]) -> List[Any]:
     # Gather others from the list.
     for i, o in enumerate(others):
@@ -203,19 +200,20 @@ class BatchChunker:
     def __iter__(self):
         return self
 
-    @runtime_
     def __next__(self):
         if self._curr_index < self._stop_index:
-            ubatch = self.micro_batches[self._curr_index]
-            for n in ubatch:
-                ubatch[n] = ubatch[n].to(
-                    self.device
-                )  # TODO: In-depth validation is needed.
             self._curr_index += 1
-            return ubatch
+            return self._load_ub(self._curr_index - 1)
         else:
             self._curr_index = 0
             raise StopIteration
+
+    @runtime_
+    def _load_ub(self, _curr_index: int) -> Dict[str, Tensor]:
+        ubatch = self.micro_batches[_curr_index]
+        for n in ubatch:
+            ubatch[n] = ubatch[n].to(self.device, non_blocking=True)
+        return ubatch
 
     @property
     def chunk_size(self):
@@ -227,4 +225,4 @@ class BatchChunker:
 
 
 __all__ = [apply, apply_pipeline]
-__version__ = "0.3.0"
+__version__ = "0.2.5"

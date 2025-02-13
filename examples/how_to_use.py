@@ -39,19 +39,23 @@ if __name__ == "__main__":  # 3624MiB
                 [transforms.Resize((224, 224)), transforms.ToTensor()]
             ),
         ),
-        batch_size=512,
+        batch_size=256,
         shuffle=False,
+        pin_memory=True,
+        num_workers=4,
     )
 
-    @mbp.apply(["image", "label"], ub_size=256, device=device)
+    @mbp.apply(["image", "label"], ub_size=64, device=device)
     def train_fn(model, criterion, image, label):
         output = model(image)
         loss = criterion(output, label)
         return loss, output
 
-    for image, label in train_loader:
+    for i, (image, label) in enumerate(train_loader):
         optimizer.zero_grad()
         with runtime():
             loss, *_ = train_fn(model, criterion, image=image, label=label)
         optimizer.step()
         print(f"loss: {loss}")
+        if i == 4:
+            break

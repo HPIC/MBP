@@ -27,6 +27,8 @@ if __name__ == "__main__":
         ),
         batch_size=512,
         shuffle=True,
+        pin_memory=True,
+        num_workers=4,
     )
 
     @mbp.apply(["image", "label"], ub_size=64, device=device, device_ids=device_ids)

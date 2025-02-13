@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch import Tensor
 from torch import device as Device
 
-from ._log import backward_log, forward_log
+from ._log import log_message
 
 total_size_submodules = 0
 submodules: Dict[int, Tuple[str, nn.Module]] = {}
@@ -37,18 +37,21 @@ def move_to_gpu(name: str, device: Device, next_mod_index: int | None = None):
             if next_mod_index < total_size_submodules:
                 next_mod_name, next_module = submodules[next_mod_index]
                 next_module.to(device, non_blocking=True)
-                forward_log(
-                    f">>> [Forward (pre-load)] Move `{next_mod_name}` to {next(module.parameters()).device}!"
+                log_message(
+                    f">>> [Forward (pre-load)] Move `{next_mod_name}` to {next(module.parameters()).device}!",
+                    color="green",
                 )
             if next_mod_index - 1 == 0:
                 module.to(device, non_blocking=True)
-                forward_log(
-                    f">>> [Forward] Move `{name}` to {next(module.parameters()).device}!"
+                log_message(
+                    f">>> [Forward] Move `{name}` to {next(module.parameters()).device}!",
+                    color="green",
                 )
         else:
             module.to(device, non_blocking=True)
-            forward_log(
-                f">>> [Forward] Move `{name}` to {next(module.parameters()).device}!"
+            log_message(
+                f">>> [Forward] Move `{name}` to {next(module.parameters()).device}!",
+                color="green",
             )
 
     return _wrapper
@@ -62,12 +65,14 @@ def move_to_cpu(name: str, next_mod_index: int):
             if next_mod_index < total_size_submodules:
                 next_mod_name, next_module = submodules[next_mod_index]
                 next_module.to("cpu", non_blocking=True)
-                backward_log(
-                    f"<<< [Backward] Move `{next_mod_name}` to {next(module.parameters()).device}!"
+                log_message(
+                    f"<<< [Backward] Move `{next_mod_name}` to {next(module.parameters()).device}!",
+                    color="blue",
                 )
             module.to(device, non_blocking=True)
-            backward_log(
-                f">>> [Backward] Move `{name}` to {next(module.parameters()).device}!"
+            log_message(
+                f">>> [Backward] Move `{name}` to {next(module.parameters()).device}!",
+                color="blue",
             )
 
         return _wrapper
@@ -77,8 +82,9 @@ def move_to_cpu(name: str, next_mod_index: int):
             _auto_onload_offload(name, module, output.device, next_mod_index)
         )
         module.to("cpu", non_blocking=True)
-        forward_log(
-            f"<<< [Forward] Move `{name}` to {next(module.parameters()).device} (attach backward hooks: {hex(id(output))})!"
+        log_message(
+            f"<<< [Forward] Move `{name}` to {next(module.parameters()).device} (attach backward hooks: {hex(id(output))})!",
+            color="green",
         )
 
     return _wrapper
