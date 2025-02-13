@@ -20,7 +20,7 @@ def runtime():
     print(f"Runtime: {(end-start) * 1e-6:.1f} ms")
 
 
-if __name__ == "__main__":  # 3624MiB
+if __name__ == "__main__":
     torch.manual_seed(42)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False

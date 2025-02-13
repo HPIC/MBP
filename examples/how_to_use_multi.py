@@ -1,3 +1,6 @@
+from contextlib import contextmanager
+from time import perf_counter_ns
+
 import torch
 import torch.nn as nn
 from torch import optim
@@ -8,7 +11,20 @@ from torchvision.models import ResNet50_Weights, resnet50
 
 import mbp
 
+
+@contextmanager
+def runtime():
+    start = perf_counter_ns()
+    yield
+    end = perf_counter_ns()
+    print(f"Runtime: {(end-start) * 1e-6:.1f} ms")
+
+
 if __name__ == "__main__":
+    torch.manual_seed(42)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     device = torch.device("cuda:0")
     device_ids = [0, 1]
     model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
@@ -37,10 +53,11 @@ if __name__ == "__main__":
         loss = criterion(output, label)
         return loss, output
 
-    epochs = 10
-    for e in range(epochs):
-        for image, label in train_loader:
-            optimizer.zero_grad()
+    for i, (image, label) in enumerate(train_loader):
+        optimizer.zero_grad()
+        with runtime():
             loss, *_ = train_fn(model, criterion, image=image, label=label)
-            optimizer.step()
-            print(f"[{e}/{epochs}] loss: {loss}")
+        optimizer.step()
+        print(f"loss: {loss}")
+        if i == 4:
+            break

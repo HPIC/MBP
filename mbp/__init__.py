@@ -8,7 +8,6 @@ from torch import Tensor
 from torch import device as Device
 
 from ._log import runtime_
-from ._pipeline import apply_pipeline
 
 
 def apply(
@@ -80,12 +79,19 @@ def apply(
         def wrapper(*args, **kwargs):
             if not hasattr(wrapper, "dev"):
                 wrapper.dev, wrapper.num_device = dev_, device_ids_
-            loss = 0
-            batch_chunker = BatchChunker(
-                batch_names, kwargs, ub_size, wrapper.dev, wrapper.num_device
-            )
-            if batch_chunker.is_valid:
-                ub_loss: Tensor
+
+            for n in batch_names:
+                assert n in kwargs, f"Missing tensor: {n}"
+            mb_size = kwargs[batch_names[0]].shape[0]
+            chunk_size = _get_chunk_size(mb_size, ub_size, wrapper.num_device)
+
+            if chunk_size > 1:
+                batch_chunker = BatchChunker(
+                    batch_names, kwargs, mb_size, chunk_size, ub_size, wrapper.dev
+                )
+                for n in batch_names:
+                    del kwargs[n]
+                loss = 0.0
                 others: List[Any] = []  # Store/Stack others
                 for ubatch in batch_chunker:
                     kwargs.update(ubatch)
@@ -98,8 +104,11 @@ def apply(
                     return loss
             else:
                 warnings.warn(
-                    "No tensors to split. please check the format of arguments in the function (key=value).",
+                    "No batches to be split. please check the format of arguments in the function (key=value) or"
+                    + f"make sure micro-batch size must be smaller than mini-batch size ({mb_size} < {ub_size}).",
                 )
+                for n in batch_names:
+                    kwargs[n] = kwargs[n].to(wrapper.dev, non_blocking=True)
                 return func(*args, **kwargs)
 
         return wrapper
@@ -165,23 +174,22 @@ def _gather_others(others: List[Any]) -> List[Any]:
     return others
 
 
+def _get_chunk_size(mb_size: int, ub_size: int, num_device: int) -> bool:
+    chunk_size = math.ceil(mb_size / ub_size) if mb_size > ub_size else 1
+    chunk_size = math.ceil(chunk_size / num_device) if num_device > 1 else chunk_size
+    return chunk_size
+
+
 class BatchChunker:
     def __init__(
         self,
         batch_names: List[str] | Tuple[str, ...],
         kwargs: Dict[str, Tensor],
+        mb_size: int,
+        chunk_size: int,
         ub_size: int,
         device: Device,
-        num_device: int,
     ):
-        for n in batch_names:
-            assert n in kwargs, f"Missing tensor: {n}"
-        mb_size = kwargs[batch_names[0]].shape[0]
-        chunk_size = math.ceil(mb_size / ub_size) if mb_size > ub_size else 1
-        chunk_size = (
-            math.ceil(chunk_size / num_device) if num_device > 1 else chunk_size
-        )
-
         self._stop_index = chunk_size
         self._curr_index = 0
         self.device: Device = device
@@ -191,8 +199,6 @@ class BatchChunker:
             sidx = s * ub_size
             eidx = min(sidx + ub_size, mb_size)
             self.micro_batches.append({n: kwargs[n][sidx:eidx] for n in batch_names})
-        for n in batch_names:
-            del kwargs[n]
 
     def __len__(self):
         return self._stop_index
@@ -219,10 +225,6 @@ class BatchChunker:
     def chunk_size(self):
         return self._stop_index
 
-    @property
-    def is_valid(self):
-        return self.chunk_size > 1
 
-
-__all__ = [apply, apply_pipeline]
-__version__ = "0.2.5"
+__all__ = [apply]
+__version__ = "0.2.6"
