@@ -1,5 +1,5 @@
 # Micro-Batch Processing (MBP)
-[![pypi](https://img.shields.io/pypi/v/expedantic.svg)](https://pypi.org/project/mbp-pytorch/)
+[![pypi](https://img.shields.io/pypi/v/mbp-pytorch.svg)](https://pypi.org/project/mbp-pytorch/)
 [![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/downloads/release/python-3100/)
 
 MBP is a simple method to enable deep learning (DL) models to train in large mini-batches, even when the devices (i.e., GPUs) have limited memory size. This GitHub repository provides an implementation of PyTorch-based MBP. You can easily train your DL models in large-batch training without the need to apply complex techniques, increase the number of GPUs, or GPU memory size.
@@ -21,7 +21,7 @@ If you want to install MBP from source code, please follow the steps below:
 ```bash
 git clone https://github.com/HPIC/MBP.git
 cd MBP/
-python setup.py install
+pip install .
 ```
 
 ## Usage
