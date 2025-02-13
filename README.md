@@ -81,6 +81,11 @@ def train_fn(model, criterion, x, label, *args, **kwargs):
     output = model(x)
     loss = criterion(output, label)
     return loss
+
+for image, label in dataloader:
+    optimizer.zero_grad()
+    loss, *others = train_fn(model, criterion, x=image, label=label)
+    optimizer.step()
 ```
 
 ## Citation
