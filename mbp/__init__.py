@@ -85,15 +85,17 @@ def apply(
                 batch_names, kwargs, ub_size, wrapper.dev, wrapper.num_device
             )
             if batch_chunker.is_valid:
-                u_loss: Tensor
-                others: List[Any] = []
-                for kwargs in batch_chunker:
-                    out = _forward(func, args, kwargs)
-                    u_loss, others = _parse_out(out, others)
-                    loss += _backward(u_loss, batch_chunker.chunk_size)
+                ub_loss: Tensor
+                others: List[Any] = []  # Store/Stack others
+                for ubatch in batch_chunker:
+                    kwargs.update(ubatch)
+                    out = _forward_ub(func, args, kwargs)
+                    ub_loss, others = _seperate_uloss_and_others(out, others)
+                    loss += _backward_ub(ub_loss, batch_chunker.chunk_size)
                 if len(others) > 0:
                     return loss, *_gather_others(others)
-                return loss
+                else:
+                    return loss
             else:
                 warnings.warn(
                     "No tensors to split. please check the format of arguments in the function (key=value).",
@@ -106,40 +108,44 @@ def apply(
 
 
 @runtime_
-def _forward(func: Callable, args, kwargs) -> Any:
+def _forward_ub(func: Callable, args: List[Any], kwargs: Dict[str, Any]) -> Any:
     return func(*args, **kwargs)
 
 
 @runtime_
-def _backward(u_loss: Tensor, chunk_size: int) -> Tensor:
-    u_loss /= chunk_size
-    u_loss.backward()
-    return u_loss
+def _backward_ub(ub_loss: Tensor, chunk_size: int) -> Tensor:
+    ub_loss /= chunk_size  # Apply Loss Normalization.
+    ub_loss.backward()
+    return ub_loss
 
 
 @runtime_
-def _parse_out(
+def _seperate_uloss_and_others(
     out: Any, others_list: List[List[Any]]
 ) -> Tuple[Tensor, List[List[Any]]]:
+    # Separate the loss tensor and others from the output of the function.
     if isinstance(out, tuple):
-        u_loss, *others = out
+        ub_loss, *others = out
         assert isinstance(
-            u_loss, Tensor
+            ub_loss, Tensor
         ), "The first return value must be a loss tensor."
-        assert u_loss.dim() == 0, "The loss tensor must be a scalar."
+        assert ub_loss.requires_grad, "The loss tensor must require gradients."
+        assert ub_loss.dim() == 0, "The loss tensor must be a scalar."
         others_list = _store_others(others, out=others_list)
-        return u_loss, others_list
+        return ub_loss, others_list
     else:
-        u_loss = out
+        ub_loss = out
         assert isinstance(
-            u_loss, Tensor
+            ub_loss, Tensor
         ), "The first return value must be a loss tensor."
-        assert u_loss.dim() == 0, "The loss tensor must be a scalar."
-        return u_loss, others_list
+        assert ub_loss.requires_grad, "The loss tensor must require gradients."
+        assert ub_loss.dim() == 0, "The loss tensor must be a scalar."
+        return ub_loss, others_list
 
 
 @runtime_
 def _store_others(others: Tuple[Any], out: List[List[Any]]) -> List[Any]:
+    # Store others in a list.
     if len(out) == 0:
         out = [[o] for o in others]
     else:
@@ -150,13 +156,13 @@ def _store_others(others: Tuple[Any], out: List[List[Any]]) -> List[Any]:
 
 @runtime_
 def _gather_others(others: List[Any]) -> List[Any]:
+    # Gather others from the list.
     for i, o in enumerate(others):
         if len(o) == 1:
             others[i] = o[0]
         else:
             if isinstance(o[0], Tensor):
-                # Only for tensors to concatenate
-                others[i] = torch.cat(o)
+                others[i] = torch.cat(o)  # Only for tensors to concatenate
             else:
                 others[i] = o
     return others
@@ -181,14 +187,15 @@ class BatchChunker:
 
         self._stop_index = chunk_size
         self._curr_index = 0
-        self.kwargs = kwargs
-        self.device = device
-
-        m_batch = {k: kwargs[k] for k in batch_names if k in kwargs}
-        self.chunked_batch: Dict[str, Tensor | Tuple[Tensor, ...]] = {}
-        for k, mb in m_batch.items():
-            self.chunked_batch[k] = mb.chunk(chunk_size)
-            self.kwargs[k] = None
+        self.device: Device = device
+        self.batch_names = batch_names
+        self.micro_batches: List[Dict[str, Tensor]] = []
+        for s in range(chunk_size):
+            sidx = s * ub_size
+            eidx = min(sidx + ub_size, mb_size)
+            self.micro_batches.append({n: kwargs[n][sidx:eidx] for n in batch_names})
+        for n in batch_names:
+            del kwargs[n]
 
     def __len__(self):
         return self._stop_index
@@ -199,10 +206,13 @@ class BatchChunker:
     @runtime_
     def __next__(self):
         if self._curr_index < self._stop_index:
+            ubatch = self.micro_batches[self._curr_index]
+            for n in ubatch:
+                ubatch[n] = ubatch[n].to(
+                    self.device
+                )  # TODO: In-depth validation is needed.
             self._curr_index += 1
-            for n, ub in self.chunked_batch.items():
-                self.kwargs[n] = ub[self._curr_index - 1].to(self.device)
-            return self.kwargs
+            return ubatch
         else:
             self._curr_index = 0
             raise StopIteration
