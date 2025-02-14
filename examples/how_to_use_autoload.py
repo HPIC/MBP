@@ -7,7 +7,7 @@ from torch import optim
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import CIFAR10
-from torchvision.models import ResNet50_Weights, resnet50
+from torchvision.models import ResNet152_Weights, resnet152
 
 import mbp
 
@@ -21,15 +21,14 @@ def runtime():
     print(f"Runtime: {(end-start) * 1e-6:.1f} ms")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # 6427
     torch.manual_seed(42)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
     device = torch.device("cuda:0")
-    device_ids = [0, 1]
-    model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
-    model = nn.DataParallel(model, device_ids=device_ids).to(device)
+    model = resnet152(weights=ResNet152_Weights.IMAGENET1K_V1)
+    mbp.autoload(model)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4)
 
@@ -43,22 +42,21 @@ if __name__ == "__main__":
             ),
         ),
         batch_size=128,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=4,
+        shuffle=False,
     )
 
-    @mbp.apply(["image", "label"], ub_size=32, device=device, device_ids=device_ids)
+    @mbp.apply(["image", "label"], ub_size=32, device=device)
     def train_fn(model, criterion, image, label):
         output = model(image)
         loss = criterion(output, label)
-        return loss, output
+        return loss, output, 1
 
     for i, (image, label) in enumerate(train_loader):
         optimizer.zero_grad()
         with runtime():
-            loss, output = train_fn(model, criterion, image=image, label=label)
+            loss, output, n = train_fn(model, criterion, image=image, label=label)
         optimizer.step()
-        print(f"loss: {loss:.3f}, output-shape: {output.shape}")
+        print(f"loss: {loss:.3f}, output-shape: {output.shape}, {n}")
         if i == 4:
             break
+    print("Done!")

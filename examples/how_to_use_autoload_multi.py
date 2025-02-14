@@ -10,7 +10,6 @@ from torchvision.datasets import CIFAR10
 from torchvision.models import ResNet152_Weights, resnet152
 
 import mbp
-from mbp._pipeline import apply_pipeline
 
 
 @contextmanager
@@ -22,14 +21,16 @@ def runtime():
     print(f"Runtime: {(end-start) * 1e-6:.1f} ms")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # 6427
     torch.manual_seed(42)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
     device = torch.device("cuda:0")
+    device_ids = [0, 1]
     model = resnet152(weights=ResNet152_Weights.IMAGENET1K_V1)
-    model = apply_pipeline(model, device)
+    mbp.autoload(model)
+    model = nn.DataParallel(model, device_ids=device_ids).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4)
 
@@ -42,50 +43,22 @@ if __name__ == "__main__":
                 [transforms.Resize((224, 224)), transforms.ToTensor()]
             ),
         ),
-        batch_size=64,
+        batch_size=128,
         shuffle=False,
     )
 
-    @mbp.apply(["image", "label"], ub_size=16, device=device)
+    @mbp.apply(["image", "label"], ub_size=32, device=device, device_ids=device_ids)
     def train_fn(model, criterion, image, label):
         output = model(image)
         loss = criterion(output, label)
-        return loss, output
+        return loss, output, 1
 
     for i, (image, label) in enumerate(train_loader):
         optimizer.zero_grad()
         with runtime():
-            loss, *_ = train_fn(model, criterion, image=image, label=label)
+            loss, output, n = train_fn(model, criterion, image=image, label=label)
         optimizer.step()
-        print(f"loss: {loss}")
-        if i == 4:
-            break
-    print("Done!")
-
-    model = resnet152(weights=ResNet152_Weights.IMAGENET1K_V1).to(device)
-    optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4)
-    train_loader = DataLoader(
-        CIFAR10(
-            root="./data",
-            train=True,
-            download=True,
-            transform=transforms.Compose(
-                [transforms.Resize((224, 224)), transforms.ToTensor()]
-            ),
-        ),
-        batch_size=64,
-        shuffle=False,
-    )
-
-    for i, (image, label) in enumerate(train_loader):
-        optimizer.zero_grad()
-        with runtime():
-            image, label = image.to(device), label.to(device)
-            output = model(image)
-            loss = criterion(output, label)
-            loss.backward()
-        optimizer.step()
-        print(f"loss: {loss}")
+        print(f"loss: {loss:.3f}, output-shape: {output.shape}, {n}")
         if i == 4:
             break
     print("Done!")

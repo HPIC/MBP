@@ -7,11 +7,7 @@ from torch import device as Device
 from ._log import log_message
 
 
-def autoload(
-    model: nn.Module,
-    device: Device,
-    device_idx: List[int] | Tuple[int, ...] | None = None,
-) -> nn.Module:
+def autoload(model: nn.Module) -> nn.Module:
     r"""
     Model Auto-load and Auto-offload.
     ---
@@ -47,21 +43,22 @@ def autoload(
             if not mod._parameters:
                 continue
             leaf_modules.append(name)
-            mod.register_forward_pre_hook(_fwd_onload(name, device))
+            mod.register_forward_pre_hook(_fwd_onload(name))
             mod.register_forward_hook(_fwd_offload(name))
 
     return model
 
 
-def _fwd_onload(name: str, device: Device):
+def _fwd_onload(name: str):
     def _wrapper(module: nn.Module, inputs: List[Tensor] | Tuple[Tensor, ...]):
+        device = inputs[0].device
         # Attach backward offload hook
         if hasattr(inputs[0], "grad_fn") and inputs[0].grad_fn is not None:
             inputs[0].grad_fn.register_prehook(_bwd_offload(name, module))
         # Onload forward
         module.to(device, non_blocking=True)
         log_message(
-            f">>> [Forward] Move `{name}` to {next(module.parameters()).device}!",
+            f">>> [Forward] Move `{name}` to CUDA!",
             color="green",
         )
 
@@ -75,19 +72,8 @@ def _fwd_offload(name: str):
         # Offload forward
         module.to("cpu", non_blocking=True)
         log_message(
-            f"<<< [Forward] Move `{name}` to {next(module.parameters()).device}!",
+            f"<<< [Forward] Move `{name}` to CPU!",
             color="green",
-        )
-
-    return _wrapper
-
-
-def _bwd_offload(name: str, module: nn.Module):
-    def _wrapper(*args, **kwargs):
-        module.to("cpu", non_blocking=True)
-        log_message(
-            f"<<< [Backward] Move `{name}` to {next(module.parameters()).device}!",
-            color="blue",
         )
 
     return _wrapper
@@ -97,7 +83,18 @@ def _bwd_onload(name: str, module: nn.Module, device: Device):
     def _wrapper(*args, **kwargs):
         module.to(device, non_blocking=True)
         log_message(
-            f">>> [Backward] Move `{name}` to {next(module.parameters()).device}!",
+            f">>> [Backward] Move `{name}` to CUDA!",
+            color="blue",
+        )
+
+    return _wrapper
+
+
+def _bwd_offload(name: str, module: nn.Module):
+    def _wrapper(*args, **kwargs):
+        module.to("cpu", non_blocking=True)
+        log_message(
+            f"<<< [Backward] Move `{name}` to CPU!",
             color="blue",
         )
 

@@ -89,7 +89,13 @@ def apply(
 
             if chunk_size >= 1:
                 batch_chunker = BatchChunker(
-                    batch_names, kwargs, mb_size, chunk_size, ub_size, wrapper.dev
+                    batch_names,
+                    kwargs,
+                    mb_size,
+                    chunk_size,
+                    ub_size,
+                    wrapper.dev,
+                    wrapper.num_device,
                 )
                 for n in batch_names:
                     del kwargs[n]
@@ -191,6 +197,7 @@ class BatchChunker:
         chunk_size: int,
         ub_size: int,
         device: Device,
+        num_device: int = 1,
     ):
         self._stop_index = chunk_size
         self._curr_index = 0
@@ -198,8 +205,8 @@ class BatchChunker:
         self.batch_names = batch_names
         self.micro_batches: List[Dict[str, Tensor]] = []
         for s in range(chunk_size):
-            sidx = s * ub_size
-            eidx = min(sidx + ub_size, mb_size)
+            sidx = s * (ub_size * num_device)
+            eidx = min(sidx + (ub_size * num_device), mb_size)
             self.micro_batches.append({n: kwargs[n][sidx:eidx] for n in batch_names})
 
     def __len__(self):
