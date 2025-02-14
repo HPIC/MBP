@@ -1,6 +1,5 @@
 import functools
 import math
-import warnings
 from typing import Any, Callable, Dict, List, Tuple
 
 import torch
@@ -80,12 +79,14 @@ def apply(
             if not hasattr(wrapper, "dev"):
                 wrapper.dev, wrapper.num_device = dev_, device_ids_
 
-            for n in batch_names:
-                assert n in kwargs, f"Missing tensor: {n}"
-            mb_size = kwargs[batch_names[0]].shape[0]
+            try:
+                mb_size = kwargs[batch_names[0]].shape[0]
+            except KeyError:
+                message = "No batches to be split. Please check the format of arguments in the function (key=value)!"
+                raise KeyError(message)
             chunk_size = _get_chunk_size(mb_size, ub_size, wrapper.num_device)
 
-            if chunk_size > 1:
+            if chunk_size >= 1:
                 batch_chunker = BatchChunker(
                     batch_names, kwargs, mb_size, chunk_size, ub_size, wrapper.dev
                 )
@@ -103,13 +104,9 @@ def apply(
                 else:
                     return loss
             else:
-                warnings.warn(
-                    "No batches to be split. please check the format of arguments in the function (key=value) or"
-                    + f"make sure micro-batch size must be smaller than mini-batch size ({mb_size} < {ub_size}).",
+                raise ValueError(
+                    "The chunk size must be greater than or equal to 1. Please check the micro-batch size and the number of devices."
                 )
-                for n in batch_names:
-                    kwargs[n] = kwargs[n].to(wrapper.dev, non_blocking=True)
-                return func(*args, **kwargs)
 
         return wrapper
 
@@ -129,8 +126,8 @@ def _backward_ub(ub_loss: Tensor, chunk_size: int) -> Tensor:
 
 
 def _seperate_uloss_and_others(
-    out: Any, others_list: List[List[Any]]
-) -> Tuple[Tensor, List[List[Any]]]:
+    out: Any, others_list: List[List[Any]] | None = None
+) -> Tuple[Tensor, List[List[Any]]] | Tensor:
     # Separate the loss tensor and others from the output of the function.
     if isinstance(out, tuple):
         ub_loss, *others = out
@@ -139,6 +136,8 @@ def _seperate_uloss_and_others(
         ), "The first return value must be a loss tensor."
         assert ub_loss.requires_grad, "The loss tensor must require gradients."
         assert ub_loss.dim() == 0, "The loss tensor must be a scalar."
+        if others_list is None:
+            return ub_loss, *others
         others_list = _store_others(others, out=others_list)
         return ub_loss, others_list
     else:
@@ -148,6 +147,8 @@ def _seperate_uloss_and_others(
         ), "The first return value must be a loss tensor."
         assert ub_loss.requires_grad, "The loss tensor must require gradients."
         assert ub_loss.dim() == 0, "The loss tensor must be a scalar."
+        if others_list is None:
+            return ub_loss
         return ub_loss, others_list
 
 
