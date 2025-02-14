@@ -46,7 +46,7 @@ def log_message(txt: str, color: str = TextColor.RESET):
 
     """
     _color = TextColor.RESET
-    if _color in dir(TextColor):
+    if color.upper() in dir(TextColor):
         _color = getattr(TextColor, color.upper())
     logging.debug(TextColor.colorize(txt, _color))
 
